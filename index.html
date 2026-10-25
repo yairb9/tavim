@@ -115,6 +115,10 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
 .bc svg{display:block;max-width:100%;height:auto}
 #rQr svg{width:min(62vw,250px);height:auto}
 .rbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rbtns[hidden]{display:none}
+.rbtns .wide{grid-column:1/-1}
+.partial{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;margin-bottom:10px}
+.partial[hidden]{display:none}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 14px;display:none;align-items:center;gap:14px;z-index:30;font-size:15px;max-width:92vw}
 .toast.show{display:flex}
 .toast button{background:transparent;color:var(--hi);padding:4px 6px;font-weight:700}
@@ -135,7 +139,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     <label class="fld wide">מספר התו
       <input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="20">
     </label>
-    <label class="fld">סכום (₪)
+    <label class="fld">יתרה (₪)
       <input id="mAmt" class="num" inputmode="decimal" placeholder="לא חובה">
     </label>
     <label class="fld">תאריך הטענה
@@ -205,8 +209,16 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       <div class="bc" id="rBarBox"><svg id="rBar"></svg></div>
     </div>
   </div>
-  <div class="rbtns">
-    <button class="primary" id="rUsed" type="button">מומש, לתו הבא</button>
+  <div class="partial" id="rPartial" hidden>
+    <label class="fld">כמה מימשת? (₪)
+      <input id="rPartAmt" class="num" inputmode="decimal" placeholder="למשל 20">
+    </label>
+    <button class="primary" id="rPartOk" type="button">עדכון יתרה</button>
+    <button class="ghost" id="rPartCancel" type="button">ביטול</button>
+  </div>
+  <div class="rbtns" id="rBtns">
+    <button class="primary wide" id="rUsed" type="button">מומש במלואו, לתו הבא</button>
+    <button class="ghost" id="rPartBtn" type="button">מימוש חלקי</button>
     <button class="ghost" id="rNext" type="button">דלג לתו הבא</button>
   </div>
 </div>
@@ -227,7 +239,14 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   const plusYears = (iso, n) => { const [y,m,d] = iso.split("-"); return `${+y + n}-${m}-${d}`; };
   const expiryOf = v => v.loaded ? plusYears(v.loaded, 5) : (v.expiry || null);
   // earlier versions saved the date they found as an expiry date; a date in the past is really the load date
-  items.forEach(v => { if(!v.loaded && v.expiry && v.expiry <= todayIso()){ v.loaded = v.expiry; delete v.expiry; } });
+  function migrate(v){
+    if(!v.loaded && v.expiry && v.expiry <= todayIso()){ v.loaded = v.expiry; delete v.expiry; }
+    // one "amount" field became two: what was loaded, and what is left
+    if(v.balance === undefined && "amount" in v){ v.balance = v.amount ?? null; v.loadAmount = v.amount ?? null; delete v.amount; }
+    return v;
+  }
+  items.forEach(migrate);
+  const balOf = v => v.balance ?? v.loadAmount ?? null;
 
   const group = c => [c.slice(0,3), c.slice(3,6), c.slice(6,9), c.slice(9)];
   const money = n => "₪" + (Math.round(n*100)/100).toLocaleString("he-IL");
@@ -260,24 +279,27 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const code = String(v.code || "").replace(/\D/g, "");
       if(code.length !== 13) continue;
       const ex = items.find(x => x.code === code);
-      const amount = v.amount > 0 ? v.amount : null;
+      const pos = x => (typeof x === "number" && x > 0) ? Math.round(x*100)/100 : null;
+      const balance = pos(v.balance) ?? pos(v.loadAmount), loadAmount = pos(v.loadAmount) ?? pos(v.balance);
       const loaded = (typeof v.loaded === "string" && ISO.test(v.loaded)) ? v.loaded : null;
       if(ex){
         if(ex.deleted){
           // read again after deleting: bring it back from the trash with the new details
           ex.deleted = false; delete ex.deletedAt; ex.used = false; delete ex.usedAt;
-          if(amount) ex.amount = amount; if(loaded){ ex.loaded = loaded; delete ex.expiry; } if(v.shot) ex.shot = v.shot;
+          if(balance != null) ex.balance = balance; if(loadAmount != null) ex.loadAmount = loadAmount; if(loaded){ ex.loaded = loaded; delete ex.expiry; } if(v.shot) ex.shot = v.shot;
           restored++; lastAdded.add(code); continue;
         }
         let changed = false;
-        if(ex.amount == null && amount){ ex.amount = amount; changed = true; }
+        if(ex.loadAmount == null && loadAmount != null){ ex.loadAmount = loadAmount; changed = true; }
+        // a newer screenshot shows a lower balance after a partial use; balances only go down
+        if(balance != null && (ex.balance == null || balance < ex.balance)){ ex.balance = balance; changed = true; }
         if(!ex.loaded && loaded){ ex.loaded = loaded; delete ex.expiry; changed = true; }
         if(v.shot && !ex.shot) ex.shot = v.shot;
         if(changed) updated++;
         if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); }
         continue;
       }
-      items.unshift({ id: uid(), code, amount, loaded, shot: v.shot || null, used: false, added: Date.now() });
+      items.unshift({ id: uid(), code, balance, loadAmount, loaded, shot: v.shot || null, used: false, added: Date.now() });
       lastAdded.add(code); added++;
     }
     save();
@@ -291,7 +313,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     if(r.dup) p.push(r.dup === 1 ? "תו אחד כבר נמצא ברשימה (מסומן בצהוב), ולא נוסף שוב." : `${r.dup} תווים כבר נמצאים ברשימה (מסומנים בצהוב), ולא נוספו שוב.`);
     if(r.dupUsed) p.push(r.dupUsed === 1 ? "תו אחד כבר מומש בעבר, ולא נוסף." : `${r.dupUsed} תווים כבר מומשו בעבר, ולא נוספו.`);
     if(r.restored) p.push(r.restored === 1 ? "תו אחד שהיה בפח חזר לרשימה." : `${r.restored} תווים שהיו בפח חזרו לרשימה.`);
-    if(r.updated) p.push(r.updated === 1 ? "בתו אחד הושלמו סכום או תאריך הטענה." : `ב-${r.updated} תווים הושלמו סכום או תאריך הטענה.`);
+    if(r.updated) p.push(r.updated === 1 ? "תו אחד עודכן (יתרה, סכום או תאריך)." : `${r.updated} תווים עודכנו (יתרה, סכום או תאריך).`);
     return p.join(" ");
   }
 
@@ -308,7 +330,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     const code = $("mCode").value.replace(/\D/g, "");
     if(code.length !== 13){ setStatus("המספר צריך להכיל בדיוק 13 ספרות. הוקלדו " + code.length + ".", true); return; }
     const amt = parseFloat($("mAmt").value.replace(",", "."));
-    const r = addCodes([{ code, amount: isNaN(amt) ? null : amt, loaded: $("mExp").value || null }]);
+    const r = addCodes([{ code, balance: isNaN(amt) ? null : amt, loaded: $("mExp").value || null }]);
     setStatus(resultText(r), !(r.added || r.restored || r.updated));
     setManual(false);
   };
@@ -336,24 +358,29 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   }
   // Find 13-digit codes, amounts and dates in the recognised text.
   // The English model reads digits reliably; Hebrew words come out garbled,
-  // so currency signs are matched in the forms they usually take (₪ as "RI", ש"ח as n"v).
-  const CUR = '(?:₪|NIS|ILS|ש["״׳\']?ח|n["”״\']?[vwyY]|R[Il1|]?)';
+  // so currency signs are matched in the forms they usually take (₪ as "RI", "M" or "w", ש"ח as n"v).
+  const CUR = '(?:₪|NIS|ILS|ש["״׳\']?ח|n["”״\']?[vwyY]|R[Il1|]?|M|[wW])';
   const AMT1 = new RegExp(CUR + '\\s*(\\d{1,4}(?:[.,]\\d{1,2})?)(?![\\d/])', 'g');
   const AMT2 = new RegExp('(?<![\\d.,/])(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*' + CUR, 'g');
   const DATE = /(?<!\d)(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?!\d)/g;
+  const DATE_YMD = /(?<!\d)(20\d{2})[\/.\-](\d{1,2})[\/.\-](\d{1,2})(?!\d)/g;   // 2026-10-25, as Multipass shows it
 
   function extract(text){
     const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
     const codes = [], amounts = [], dates = [];
     lines.forEach((raw, li) => {
       let m;
-      DATE.lastIndex = 0;
-      while((m = DATE.exec(raw))){
-        let d = +m[1], mo = +m[2], y = +m[3]; if(y < 100) y += 2000;
+      const pushDate = (y, mo, d) => {
+        if(y < 100) y += 2000;
         if(d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && y >= 2015 && y <= 2045)
           dates.push({ li, iso: `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}` });
-      }
-      const noDates = raw.replace(DATE, " ");
+      };
+      DATE_YMD.lastIndex = 0;
+      while((m = DATE_YMD.exec(raw))) pushDate(+m[1], +m[2], +m[3]);
+      const noYmd = raw.replace(DATE_YMD, " ");
+      DATE.lastIndex = 0;
+      while((m = DATE.exec(noYmd))) pushDate(+m[3], +m[2], +m[1]);
+      const noDates = noYmd.replace(DATE, " ");
       // codes
       if((noDates.match(/\d/g) || []).length >= 10){
         const line = noDates.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1");
@@ -394,19 +421,25 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     };
     const today = todayIso();
     const out = list.map(c => {
-      let amount = null, loaded = null;
+      let balance = null, loadAmount = null, loaded = null;
       if(single){
         // one voucher: the clearest amount, and the load date, which is the earliest date (and not in the future)
-        const a = amounts.slice().sort((x, y) => (y.strong - x.strong) || (Math.abs(x.li - c.li) - Math.abs(y.li - c.li)))[0];
-        amount = a ? a.val : null;
         const all = dates.map(d => d.iso).sort();
         const past = all.filter(d => d <= today);
         loaded = past.length ? past[0] : (all[0] || null);
+        // balance = the amount closest to the code; load amount = the amount closest to the load date
+        const strong = amounts.some(a => a.strong) ? amounts.filter(a => a.strong) : amounts;
+        const b = strong.slice().sort((x, y) => Math.abs(x.li - c.li) - Math.abs(y.li - c.li))[0];
+        balance = b ? b.val : null;
+        const dLine = (dates.find(d => d.iso === loaded) || {}).li;
+        const rest = strong.filter(a => a !== b);
+        const l = rest.length ? (dLine != null ? rest.sort((x, y) => Math.abs(x.li - dLine) - Math.abs(y.li - dLine))[0] : rest[0]) : null;
+        loadAmount = l ? l.val : balance;
       } else {
-        const a = nearest(amounts, c.li, x => x.strong ? 0 : 1); amount = a ? a.val : null;
+        const a = nearest(amounts, c.li, x => x.strong ? 0 : 1); balance = loadAmount = a ? a.val : null;
         const d = nearest(dates, c.li, x => x.iso <= today ? 0 : 1); loaded = d ? d.iso : null;
       }
-      return { code: c.code, ok: c.ok, amount, loaded };
+      return { code: c.code, ok: c.ok, balance, loadAmount, loaded };
     });
     return { found: out.filter(c => c.ok), near: out.filter(c => !c.ok) };
   }
@@ -483,16 +516,19 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       inp.oninput = upd; upd();
       row.append(cb, inp, fl);
       const ex = document.createElement("div"); ex.className = "cand-extra";
-      const la = document.createElement("label"); la.textContent = "סכום ₪";
-      const amt = document.createElement("input"); amt.className = "amt"; amt.inputMode = "decimal"; amt.value = obj.amount ?? ""; amt.placeholder = "לא נמצא";
+      const la = document.createElement("label"); la.textContent = "יתרה ₪";
+      const amt = document.createElement("input"); amt.className = "amt"; amt.inputMode = "decimal"; amt.value = obj.balance ?? ""; amt.placeholder = "לא נמצא";
       la.appendChild(amt);
+      const lb = document.createElement("label"); lb.textContent = "הוטען ₪";
+      const amt2 = document.createElement("input"); amt2.className = "amt amt2"; amt2.inputMode = "decimal"; amt2.value = obj.loadAmount ?? ""; amt2.placeholder = "לא נמצא";
+      lb.appendChild(amt2);
       const ld = document.createElement("label"); ld.textContent = "תאריך הטענה";
       const dt = document.createElement("input"); dt.type = "date"; dt.className = "exp-in"; dt.value = obj.loaded || "";
       ld.appendChild(dt);
       const until = document.createElement("span");
       const showUntil = () => { until.textContent = dt.value ? "בתוקף עד " + isoToHe(plusYears(dt.value, 5)) : ""; };
       dt.onchange = showUntil; showUntil();
-      ex.append(la, ld, until);
+      ex.append(la, lb, ld, until);
       wrap.append(row, ex); rows.appendChild(wrap);
       return inp;
     };
@@ -523,8 +559,8 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     cards.forEach(card => {
       const codes = [...card.querySelectorAll(".cand-wrap")].filter(r => r.querySelector("input[type=checkbox]").checked)
         .map(r => {
-          const n = parseFloat(r.querySelector(".amt").value.replace(",", "."));
-          return { code: r.querySelector(".num").value.replace(/\D/g, ""), amount: isNaN(n) ? null : n, loaded: r.querySelector(".exp-in").value || null, shot: card._hash || null };
+          const num = el => { const n = parseFloat(el.value.replace(",", ".")); return isNaN(n) ? null : n; };
+          return { code: r.querySelector(".num").value.replace(/\D/g, ""), balance: num(r.querySelector(".amt")), loadAmount: num(r.querySelector(".amt2")), loaded: r.querySelector(".exp-in").value || null, shot: card._hash || null };
         });
       if(!codes.length){ empty++; return; }
       if(codes.some(c => c.code.length !== 13)){ bad++; card.classList.add("bad"); return; }
@@ -584,10 +620,10 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     const act = active();
     const used = items.filter(v => v.used && !v.deleted).sort((a,b) => (b.usedAt||0) - (a.usedAt||0));
     const trash = items.filter(v => v.deleted).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
-    const sumAmt = act.reduce((s,v) => s + (v.amount||0), 0);
+    const sumAmt = act.reduce((s,v) => s + (balOf(v)||0), 0);
     const sum = $("sum");
     if(!act.length) sum.textContent = used.length ? "כל התווים מומשו" : "אין עדיין תווים ברשימה";
-    else { sum.innerHTML = ""; const b = document.createElement("b"); b.textContent = act.length === 1 ? "תו פעיל אחד" : act.length + " תווים פעילים"; sum.appendChild(b); if(sumAmt) sum.append(", סך הכול " + money(sumAmt)); }
+    else { sum.innerHTML = ""; const b = document.createElement("b"); b.textContent = act.length === 1 ? "תו פעיל אחד" : act.length + " תווים פעילים"; sum.appendChild(b); if(sumAmt) sum.append(", יתרה כוללת " + money(sumAmt)); }
 
     const list = $("list"); list.innerHTML = "";
     if(!act.length && !used.length){
@@ -599,10 +635,11 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const li = document.createElement("li"); li.className = "item" + (lastAdded.has(v.code) ? " new" : "");
       const cb = codeBtn(v); cb.onclick = () => openReader(v.id); li.appendChild(cb);
       const m = document.createElement("div"); m.className = "meta";
-      const lab = document.createElement("label"); lab.textContent = "₪";
-      const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.placeholder = "סכום"; inp.value = v.amount ?? ""; inp.setAttribute("aria-label", "סכום התו");
-      inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.amount = isNaN(n) || n <= 0 ? null : n; lastAdded = new Set(); save(); };
+      const lab = document.createElement("label"); lab.textContent = "יתרה ₪";
+      const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.placeholder = "?"; inp.value = balOf(v) ?? ""; inp.setAttribute("aria-label", "יתרה");
+      inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.balance = isNaN(n) || n < 0 ? null : Math.round(n*100)/100; if(v.loadAmount == null) v.loadAmount = v.balance; lastAdded = new Set(); save(); };
       lab.appendChild(inp); m.appendChild(lab);
+      if(v.loadAmount != null) m.appendChild(mkSpan("הוטען " + money(v.loadAmount)));
       const ld = document.createElement("label"); ld.textContent = "הטענה";
       const dt = document.createElement("input"); dt.type = "date"; dt.value = v.loaded || ""; dt.setAttribute("aria-label", "תאריך הטענה");
       dt.onchange = () => { v.loaded = dt.value || null; delete v.expiry; lastAdded = new Set(); save(); };
@@ -617,7 +654,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
         const li = document.createElement("li"); li.className = "item faded";
         const c = codeBtn(v); c.disabled = true; li.appendChild(c);
         const m = document.createElement("div"); m.className = "meta";
-        if(v.amount) m.appendChild(mkSpan(money(v.amount)));
+        if(v.loadAmount ?? v.balance) m.appendChild(mkSpan(money(v.loadAmount ?? v.balance)));
         if(v.usedAt) m.appendChild(mkSpan("מומש ב-" + fmtDate(v.usedAt)));
         m.append(spacer(), mkBtn("מחיקה", "del", () => removeItem(v.id)), mkBtn("החזר לפעילים", "", () => { v.used = false; delete v.usedAt; lastAdded = new Set(); save(); }));
         li.appendChild(m); list.appendChild(li);
@@ -629,7 +666,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const li = document.createElement("li"); li.className = "item faded";
       const c = codeBtn(v); c.disabled = true; li.appendChild(c);
       const m = document.createElement("div"); m.className = "meta";
-      if(v.amount) m.appendChild(mkSpan(money(v.amount)));
+      if(v.loadAmount ?? v.balance) m.appendChild(mkSpan(money(v.loadAmount ?? v.balance)));
       if(v.deletedAt) m.appendChild(mkSpan("נמחק ב-" + fmtDate(v.deletedAt)));
       m.append(spacer(), mkBtn("מחיקה לצמיתות", "del", () => purgeItem(v.id)), mkBtn("שחזור", "", () => { v.deleted = false; delete v.deletedAt; lastAdded = new Set([v.code]); save(); }));
       li.appendChild(m); tl.appendChild(li);
@@ -684,7 +721,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const d = JSON.parse(await f.text());
       const inc = Array.isArray(d) ? d : (d.items || []);
       const known = new Set(items.map(v => v.code)); let n = 0;
-      inc.forEach(v => { if(v && /^\d{13}$/.test(v.code) && !known.has(v.code)){ items.push(Object.assign({ id: uid(), added: Date.now() }, v)); known.add(v.code); n++; } });
+      inc.forEach(v => { if(v && /^\d{13}$/.test(v.code) && !known.has(v.code)){ items.push(migrate(Object.assign({ id: uid(), added: Date.now() }, v))); known.add(v.code); n++; } });
       (d.shots || []).forEach(rememberShot);
       save(); setStatus(n ? `נטענו ${n} תווים מהגיבוי.` : "כל התווים בגיבוי כבר נמצאים ברשימה.");
     }catch(e){ setStatus("הקובץ הזה אינו קובץ גיבוי תקין.", true); }
@@ -718,7 +755,8 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     const g = $("rGroups"); g.innerHTML = "";
     group(v.code).forEach(s => { const e = document.createElement("span"); e.textContent = s; g.appendChild(e); });
     const parts = [];
-    if(v.amount) parts.push(money(v.amount));
+    const bal = balOf(v);
+    if(bal != null) parts.push("יתרה " + money(bal) + (v.loadAmount != null && v.loadAmount !== bal ? " מתוך " + money(v.loadAmount) : ""));
     if(v.loaded) parts.push("הוטען ב-" + isoToHe(v.loaded));
     const exp = expiryOf(v);
     if(exp && daysLeft(exp) <= 30) parts.push((daysLeft(exp) < 0 ? "פג תוקף ב-" : "בתוקף עד ") + isoToHe(exp));
@@ -730,7 +768,33 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   }
   function closeReader(){ $("reader").classList.remove("open"); curId = null; if(wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; } }
   function nextAfter(id){ const act = active(); const i = act.findIndex(x => x.id === id); return act.length ? act[(i+1) % act.length] : null; }
-  $("rClose").onclick = closeReader;
+  $("rClose").onclick = () => { showPartial(false); closeReader(); };
+  function showPartial(on){
+    $("rPartial").hidden = !on; $("rBtns").hidden = on;
+    if(on){ $("rPartAmt").value = ""; $("rPartAmt").focus(); }
+  }
+  $("rPartBtn").onclick = () => showPartial(true);
+  $("rPartCancel").onclick = () => showPartial(false);
+  $("rPartOk").onclick = () => {
+    const v = items.find(x => x.id === curId); if(!v) return;
+    const x = parseFloat($("rPartAmt").value.replace(",", "."));
+    const bal = balOf(v);
+    if(!(x > 0)){ $("rPartAmt").focus(); return; }
+    if(bal == null){ showPartial(false); toast("לתו הזה עוד אין יתרה. אפשר להזין אותה ברשימה.", null); return; }
+    const s = snapshot();
+    const left = Math.round((bal - x) * 100) / 100;
+    showPartial(false);
+    if(left <= 0){
+      const n = nextAfter(curId);
+      v.balance = 0; v.used = true; v.usedAt = Date.now(); lastAdded = new Set(); save();
+      if(n && n.id !== v.id) openReader(n.id); else closeReader();
+      toast("נוצלה כל היתרה, התו סומן כמומש", s, 8000);
+    } else {
+      v.balance = left; if(v.loadAmount == null) v.loadAmount = bal;
+      lastAdded = new Set(); save(); openReader(v.id);
+      toast("היתרה עודכנה ל-" + money(left), s, 8000);
+    }
+  };
   $("rNext").onclick = () => { const n = nextAfter(curId); if(n) openReader(n.id); };
   $("rUsed").onclick = () => {
     const v = items.find(x => x.id === curId); if(!v) return closeReader();
