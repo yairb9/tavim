@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f7a52">
+<title>התווים שלי</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<style>
+:root{
+  --paper:#f3f6f4; --card:#ffffff; --ink:#14261f; --muted:#5d6f67; --line:#d5dfda;
+  --accent:#0f7a52; --accent-ink:#ffffff; --hi:#ffe066; --danger:#b3261e; --warn:#8a5a00;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{ --paper:#0f1a16; --card:#17251f; --ink:#e8f1ec; --muted:#9db1a7; --line:#2a3b34;
+    --accent:#3fbf8a; --accent-ink:#06140e; --hi:#e8c547; --danger:#ff8a80; --warn:#f0c060; color-scheme:dark; }
+}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Rubik",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;line-height:1.5}
+.wrap{max-width:560px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:30px;font-weight:800;margin:4px 0 2px;letter-spacing:-.01em}
+.sum{color:var(--muted);margin:0 0 18px}
+.sum b{color:var(--ink);font-weight:700}
+.actions{display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:12px}
+button,.btn{font:inherit;border:0;border-radius:12px;cursor:pointer;padding:14px 16px;font-weight:500}
+.primary{background:var(--accent);color:var(--accent-ink);font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+button:focus-visible,.btn:focus-within,input:focus-visible,summary:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+.status{margin:0 0 12px;color:var(--muted);font-size:15px}
+.status.err{color:var(--danger)}
+.manual{display:none;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.manual.open{display:flex}
+.num{font:inherit;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);direction:ltr;text-align:left;font-variant-numeric:tabular-nums}
+.manual .num{flex:1 1 180px}
+.manual .num.amt{flex:0 1 110px}
+.list{display:flex;flex-direction:column;gap:12px;padding:0;margin:0;list-style:none}
+.item{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 14px 10px}
+.code{all:unset;display:block;width:100%;cursor:pointer;direction:ltr;text-align:center;font-size:clamp(24px,7.4vw,32px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;padding:6px 0 8px;border-radius:10px}
+.code span{display:inline-block;margin:0 .22em}
+.code:focus-visible{outline:3px solid var(--hi)}
+.meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:10px;font-size:15px;color:var(--muted)}
+.meta label{display:flex;align-items:center;gap:4px}
+.meta input{width:72px;font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);text-align:center}
+.sp{flex:1}
+.small{padding:8px 12px;border-radius:10px;font-size:15px;background:transparent;color:var(--ink);border:1px solid var(--line)}
+.small.go{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.small.del{color:var(--danger)}
+.empty{border:1.5px dashed var(--line);border-radius:16px;padding:28px 18px;text-align:center;color:var(--muted)}
+.item.faded{opacity:.5}
+.item.faded .code{font-size:22px;text-decoration:line-through;cursor:default}
+.divider{color:var(--muted);font-size:15px;padding:12px 2px 0}
+details{margin-top:22px}
+summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
+.backup{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+/* progress + review of scanned screenshots */
+.bulk{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:0 0 14px}
+.bulk .track{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.bulk .track span{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.bulk-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+.bulk-row b{font-variant-numeric:tabular-nums;font-weight:500}
+.review{margin-bottom:18px}
+.review h2{font-size:19px;margin:0 0 2px}
+.review > p{margin:0 0 10px;color:var(--muted);font-size:15px}
+.rv-card{background:var(--card);border:2px solid var(--accent);border-radius:16px;padding:12px;margin-bottom:10px}
+.rv-card.bad{border-color:var(--danger)}
+.shot{display:block;width:100%;height:150px;object-fit:cover;object-position:top;border-radius:10px;border:1px solid var(--line);background:var(--paper);margin-bottom:10px;cursor:zoom-in}
+.shot.big{height:auto;max-height:70vh;object-fit:contain;cursor:zoom-out}
+.rv-note{font-size:14px;color:var(--muted);margin:0 0 8px}
+.rv-card.bad .rv-note{color:var(--danger)}
+.cand{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.cand .num{flex:1;min-width:0;font-size:20px;font-weight:700;letter-spacing:.04em;padding:10px 12px}
+.cand .flag{font-size:13px;color:var(--warn);min-width:4.5em}
+.cand input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none}
+.rv-actions{display:flex;gap:8px;flex-wrap:wrap}
+.rv-btns{position:sticky;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);display:flex;gap:10px;background:var(--paper);padding:8px 0;z-index:5}
+.rv-btns .primary{flex:1}
+/* reading mode */
+.reader{position:fixed;inset:0;background:var(--paper);z-index:20;display:none;flex-direction:column;padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+.reader.open{display:flex}
+.rtop{display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
+.rbody{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;justify-content:safe center;align-items:center;gap:18px;padding:10px 0}
+.groups{direction:ltr;display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+.groups span{font-size:clamp(40px,13vw,72px);font-weight:800;font-variant-numeric:tabular-nums;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:4px 14px;line-height:1.15}
+.ramt{font-size:20px;color:var(--muted)}
+.codeview{display:flex;flex-direction:column;align-items:center;gap:12px}
+.seg{display:inline-flex;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.seg button{border-radius:0;padding:8px 20px;background:transparent;color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.bc{background:#fff;border-radius:12px;padding:10px;max-width:100%;overflow-x:auto}
+.bc svg{display:block;max-width:100%;height:auto}
+#rQr svg{width:min(62vw,250px);height:auto}
+.rbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 14px;display:none;align-items:center;gap:14px;z-index:30;font-size:15px;max-width:92vw}
+.toast.show{display:flex}
+.toast button{background:transparent;color:var(--hi);padding:4px 6px;font-weight:700}
+@media (prefers-reduced-motion:no-preference){.item.new{animation:flash 1.2s ease-out}@keyframes flash{from{background:var(--hi)}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>התווים שלי</h1>
+  <p class="sum" id="sum">אין עדיין תווים ברשימה</p>
+
+  <div class="actions">
+    <label class="btn primary" for="file">הוספה מצילום מסך</label>
+    <button class="ghost" id="manualBtn" type="button">הקלדה ידנית</button>
+  </div>
+  <input type="file" id="file" accept="image/*" multiple>
+  <div class="manual" id="manual">
+    <input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="20" aria-label="מספר התו">
+    <input id="mAmt" class="num amt" inputmode="decimal" placeholder="סכום ₪" aria-label="סכום">
+    <button class="primary" id="mAdd" type="button">הוסף</button>
+  </div>
+  <p class="status" id="status" role="status"></p>
+
+  <div class="bulk" id="bulk" hidden>
+    <div class="track" aria-hidden="true"><span id="bulkBar"></span></div>
+    <div class="bulk-row"><b id="bulkText"></b><span class="sp"></span><button class="small" id="bulkStop" type="button">עצירה</button></div>
+  </div>
+
+  <section class="review" id="review" hidden aria-label="בדיקת מספרים מצילומי מסך">
+    <h2 id="rvTitle">בדוק את המספרים שנמצאו</h2>
+    <p>השווה כל מספר לצילום (לחיצה על הצילום מגדילה אותו), תקן אם צריך, ואז הוסף.</p>
+    <div id="rvList"></div>
+    <div class="rv-btns">
+      <button class="primary" id="rvAddAll" type="button">הוסף את המסומנים</button>
+      <button class="ghost" id="rvClear" type="button">בטל הכול</button>
+    </div>
+  </section>
+
+  <ul class="list" id="list"></ul>
+
+  <details id="trashBox" hidden><summary id="trashSum"></summary><ul class="list" id="trashList"></ul></details>
+
+  <details>
+    <summary>גיבוי</summary>
+    <p style="color:var(--muted);font-size:15px;margin:6px 0 0">הרשימה שמורה רק בטלפון הזה. קובץ גיבוי מאפשר להעביר אותה לטלפון אחר או לשחזר אותה.</p>
+    <div class="backup">
+      <button class="small" id="exportBtn" type="button">שמירת קובץ גיבוי</button>
+      <label class="btn small" for="importFile">טעינת קובץ גיבוי</label>
+      <input type="file" id="importFile" accept="application/json,.json">
+    </div>
+  </details>
+</div>
+
+<div class="reader" id="reader" role="dialog" aria-modal="true" aria-label="הקראת תו">
+  <div class="rtop"><span id="rPos"></span><button class="small" id="rClose" type="button">סגירה</button></div>
+  <div class="rbody">
+    <div class="groups" id="rGroups"></div>
+    <div class="ramt" id="rAmt"></div>
+    <div class="codeview">
+      <div class="seg" role="group" aria-label="סוג קוד">
+        <button type="button" data-mode="qr">QR</button>
+        <button type="button" data-mode="bar">ברקוד</button>
+      </div>
+      <div class="bc" id="rQr"></div>
+      <div class="bc" id="rBarBox"><svg id="rBar"></svg></div>
+    </div>
+  </div>
+  <div class="rbtns">
+    <button class="primary" id="rUsed" type="button">מומש, לתו הבא</button>
+    <button class="ghost" id="rNext" type="button">דלג לתו הבא</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo" type="button">ביטול</button></div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const LS = "victory-vouchers-v1", LS_SHOTS = "victory-shots-v1", LS_MODE = "victory-codemode";
+  const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch(e){ return d; } };
+  let items = load(LS, []), shots = load(LS_SHOTS, []);
+  let lastAdded = new Set();
+
+  const group = c => [c.slice(0,3), c.slice(3,6), c.slice(6,9), c.slice(9)];
+  const money = n => "₪" + (Math.round(n*100)/100).toLocaleString("he-IL");
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  const fmtDate = t => { const d = new Date(t); return d.getDate() + "/" + (d.getMonth()+1) + "/" + d.getFullYear(); };
+  function ean13ok(c){ let s=0; for(let i=0;i<12;i++) s += (+c[i])*(i%2?3:1); return (10 - s%10)%10 === +c[12]; }
+  function setStatus(t, err){ $("status").textContent = t || ""; $("status").classList.toggle("err", !!err); }
+  function save(){ try { localStorage.setItem(LS, JSON.stringify(items)); localStorage.setItem(LS_SHOTS, JSON.stringify(shots)); } catch(e){} render(); }
+
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  async function fileHash(f){
+    try{ const h = await crypto.subtle.digest("SHA-256", await f.arrayBuffer());
+      return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2,"0")).join(""); }catch(e){ return null; }
+  }
+  function rememberShot(h){ if(!h || shots.includes(h)) return; shots.push(h); if(shots.length > 500) shots = shots.slice(-500); }
+
+  // ---------- adding ----------
+  function addCodes(list){
+    let added = 0, dup = 0, dupUsed = 0, dupTrash = 0; lastAdded = new Set();
+    for(const v of list){
+      const code = String(v.code || "").replace(/\D/g, "");
+      if(code.length !== 13) continue;
+      const ex = items.find(x => x.code === code);
+      if(ex){ if(ex.deleted) dupTrash++; else if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); } continue; }
+      items.unshift({ id: uid(), code, amount: v.amount > 0 ? v.amount : null, expiry: null, used: false, added: Date.now() });
+      lastAdded.add(code); added++;
+    }
+    save();
+    const first = document.querySelector(".item.new");
+    if(first) first.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    return { added, dup, dupUsed, dupTrash };
+  }
+  function resultText(r){
+    const p = [];
+    if(r.added) p.push(r.added === 1 ? "נוסף תו אחד." : `נוספו ${r.added} תווים.`);
+    if(r.dup) p.push(r.dup === 1 ? "תו אחד כבר נמצא ברשימה (מסומן בצהוב), ולא נוסף שוב." : `${r.dup} תווים כבר נמצאים ברשימה (מסומנים בצהוב), ולא נוספו שוב.`);
+    if(r.dupUsed) p.push(r.dupUsed === 1 ? "תו אחד כבר מומש בעבר, ולא נוסף." : `${r.dupUsed} תווים כבר מומשו בעבר, ולא נוספו.`);
+    if(r.dupTrash) p.push(r.dupTrash === 1 ? "תו אחד נמצא בפח. אפשר לשחזר אותו משם." : `${r.dupTrash} תווים נמצאים בפח. אפשר לשחזר אותם משם.`);
+    return p.join(" ");
+  }
+
+  $("manualBtn").onclick = () => { $("manual").classList.toggle("open"); if($("manual").classList.contains("open")) $("mCode").focus(); };
+  $("mAdd").onclick = () => {
+    const code = $("mCode").value.replace(/\D/g, "");
+    if(code.length !== 13){ setStatus("המספר צריך להכיל בדיוק 13 ספרות. הוקלדו " + code.length + ".", true); return; }
+    const amt = parseFloat($("mAmt").value.replace(",", "."));
+    const r = addCodes([{ code, amount: isNaN(amt) ? null : amt }]);
+    setStatus(resultText(r), !r.added);
+    $("mCode").value = ""; $("mAmt").value = "";
+  };
+
+  // ---------- reading digits from a screenshot (on the phone) ----------
+  let worker = null;
+  async function getWorker(){
+    if(worker) return worker;
+    if(!window.Tesseract) throw new Error("no-ocr");
+    worker = await Tesseract.createWorker("eng", 1, {
+      logger: m => { if(m.status === "recognizing text") setStatus("קורא את הספרות… " + Math.round(m.progress*100) + "%"); }
+    });
+    await worker.setParameters({ tessedit_pageseg_mode: "11" });
+    return worker;
+  }
+  async function prepare(file){
+    const bmp = await createImageBitmap(file);
+    const target = 2200, k = Math.min(3, target / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
+    const ctx = c.getContext("2d");
+    ctx.filter = "grayscale(1) contrast(1.4)";
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    return c;
+  }
+  function extract(text){
+    const found = [], near = [];
+    for(let line of text.split(/\n+/)){
+      if((line.match(/\d/g) || []).length < 10) continue;
+      line = line.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1");
+      // split into chunks of digits separated only by spaces or dashes, then look for
+      // neighbouring groups that add up to exactly 13 digits
+      line.split(/[^\d\s\-–]+/).forEach(chunk => {
+        const g = chunk.match(/\d+/g) || [];
+        let hit = false;
+        for(let i = 0; i < g.length; i++){
+          let s = "";
+          for(let j = i; j < g.length && s.length < 13; j++){ s += g[j]; if(s.length === 13){ found.push(s); hit = true; } }
+        }
+        if(!hit){ const all = g.join(""); if(all.length >= 11 && all.length <= 15) near.push(all); }
+      });
+    }
+    const uniq = a => [...new Set(a)];
+    return { found: uniq(found), near: uniq(near).filter(n => !found.some(f => f.includes(n) || n.includes(f))) };
+  }
+
+  // queue of screenshots to read; new ones can join while reading
+  const run = { queue: [], total: 0, done: 0, busy: false, stopped: false, same: 0, hashes: new Set() };
+  function updateBulk(){
+    const show = run.busy && run.total > 1;
+    $("bulk").hidden = !show;
+    if(!show) return;
+    $("bulkBar").style.width = Math.round(run.done / run.total * 100) + "%";
+    $("bulkText").textContent = `קורא צילומים… ${run.done} מתוך ${run.total}`;
+  }
+  $("bulkStop").onclick = () => { run.stopped = true; $("bulkText").textContent = "עוצר אחרי הצילום הנוכחי…"; };
+
+  async function handleFiles(files){
+    for(const f of files){
+      const h = await fileHash(f);
+      if(h && (shots.includes(h) || run.hashes.has(h))){ run.same++; continue; }
+      if(h) run.hashes.add(h);
+      run.queue.push({ file: f, hash: h }); run.total++;
+    }
+    if(run.busy){ updateBulk(); return; }
+    if(!run.queue.length){ setStatus(""); reportSame(); return; }
+    run.busy = true; run.stopped = false; updateBulk();
+    while(run.queue.length && !run.stopped){
+      const job = run.queue.shift();
+      if(run.total === 1) setStatus("מכין את הקריאה… בפעם הראשונה זה לוקח כמה שניות.");
+      let res = { found: [], near: [] }, failed = false;
+      try{
+        const w = await getWorker();
+        const { data } = await w.recognize(await prepare(job.file));
+        res = extract(data.text || "");
+      }catch(e){
+        failed = true;
+        if(e && e.message === "no-ocr"){ setStatus("רכיב הקריאה לא נטען. בדוק חיבור לאינטרנט ונסה שוב, או הקלד ידנית.", true); run.stopped = true; }
+      }
+      addReviewCard(job, res, failed);
+      run.done++; updateBulk();
+    }
+    // screenshots left after a stop are dropped from this round, so they can be chosen again
+    run.queue.splice(0).forEach(j => run.hashes.delete(j.hash));
+    run.busy = false; updateBulk();
+    if(run.total > 1 || !$("status").classList.contains("err")) setStatus(run.stopped ? "הקריאה נעצרה. מה שנקרא עד עכשיו מחכה לבדיקה." : "");
+    run.total = 0; run.done = 0;
+    reportSame();
+  }
+  function reportSame(){
+    if(!run.same) return;
+    const t = run.same === 1 ? "צילום מסך אחד כבר נקרא בעבר, ודילגתי עליו." : `${run.same} צילומי מסך כבר נקראו בעבר, ודילגתי עליהם.`;
+    setStatus(($("status").textContent ? $("status").textContent + " " : "") + t);
+    run.same = 0;
+  }
+
+  function addReviewCard(job, res, failed){
+    const card = document.createElement("div"); card.className = "rv-card";
+    card._hash = job.hash;
+    const url = URL.createObjectURL(job.file); card._url = url;
+    const img = document.createElement("img"); img.className = "shot"; img.src = url; img.alt = "צילום המסך";
+    img.onclick = () => img.classList.toggle("big");
+    const note = document.createElement("p"); note.className = "rv-note";
+    note.textContent = failed ? "לא הצלחתי לקרוא את הצילום. אפשר להקליד את המספר כאן." :
+      res.found.length ? "" : res.near.length ? "מצאתי מספר, אבל לא בדיוק 13 ספרות. תקן אותו לפי הצילום." : "לא מצאתי מספר של 13 ספרות. אפשר להקליד אותו כאן, או להסיר את הצילום.";
+    const rows = document.createElement("div");
+    const addRow = (val, checked) => {
+      const row = document.createElement("div"); row.className = "cand";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.setAttribute("aria-label", "להוסיף את המספר הזה");
+      const inp = document.createElement("input"); inp.className = "num"; inp.inputMode = "numeric"; inp.value = val; inp.placeholder = "13 ספרות"; inp.setAttribute("aria-label", "מספר התו");
+      const fl = document.createElement("span"); fl.className = "flag";
+      const upd = () => { const n = inp.value.replace(/\D/g, "").length; fl.textContent = (n === 13 || n === 0) ? "" : n + " ספרות"; if(n === 13) cb.checked = true; };
+      inp.oninput = upd; upd();
+      row.append(cb, inp, fl); rows.appendChild(row);
+      return inp;
+    };
+    res.found.forEach(n => addRow(n, true));
+    res.near.forEach(n => addRow(n, false));
+    if(!res.found.length && !res.near.length) addRow("", false);
+    const acts = document.createElement("div"); acts.className = "rv-actions";
+    acts.append(mkBtn("עוד מספר", "", () => addRow("", false).focus()), mkBtn("הסרת הצילום", "del", () => dropCard(card, true)));
+    card.append(img); if(note.textContent) card.append(note); card.append(rows, acts);
+    $("rvList").appendChild(card);
+    updateReview();
+    if($("rvList").children.length === 1) $("review").scrollIntoView({ block: "start" });
+  }
+  function dropCard(card, forget){
+    URL.revokeObjectURL(card._url);
+    if(forget) run.hashes.delete(card._hash);
+    card.remove(); updateReview();
+  }
+  function updateReview(){
+    const n = $("rvList").children.length;
+    $("review").hidden = !n;
+    $("rvTitle").textContent = n === 1 ? "בדוק את המספר שנמצא" : `בדוק את המספרים שנמצאו (${n} צילומים)`;
+  }
+  $("rvClear").onclick = () => { [...$("rvList").children].forEach(c => dropCard(c, true)); setStatus(""); };
+  $("rvAddAll").onclick = () => {
+    const cards = [...$("rvList").children];
+    const toAdd = []; let bad = 0, empty = 0;
+    cards.forEach(card => {
+      const codes = [...card.querySelectorAll(".cand")].filter(r => r.querySelector("input[type=checkbox]").checked)
+        .map(r => r.querySelector(".num").value.replace(/\D/g, ""));
+      if(!codes.length){ empty++; return; }
+      if(codes.some(c => c.length !== 13)){ bad++; card.classList.add("bad"); return; }
+      card.classList.remove("bad");
+      codes.forEach(code => toAdd.push({ code }));
+      rememberShot(card._hash);
+      dropCard(card, false);
+    });
+    const p = [];
+    if(toAdd.length){ const r = addCodes(toAdd); p.push(resultText(r)); }
+    if(bad) p.push(bad === 1 ? "בצילום אחד יש מספר מסומן שאין בו 13 ספרות (מסומן באדום)." : `ב-${bad} צילומים יש מספר מסומן שאין בו 13 ספרות (מסומנים באדום).`);
+    if(empty) p.push(empty === 1 ? "צילום אחד נשאר בלי מספר מסומן. סמן מספר או הסר אותו." : `${empty} צילומים נשארו בלי מספר מסומן. סמן מספר או הסר אותם.`);
+    setStatus(p.join(" "), !toAdd.length);
+  };
+
+  $("file").onchange = (ev) => { const files = Array.from(ev.target.files || []); ev.target.value = ""; if(files.length) handleFiles(files); };
+
+  // Screenshots shared from the Android share sheet arrive here through the service worker
+  async function checkInbox(){
+    if(!("caches" in window)) return;
+    try{
+      const inbox = await caches.open("share-inbox");
+      const keys = await inbox.keys();
+      const files = [];
+      for(const k of keys){
+        const res = await inbox.match(k);
+        if(res){ const b = await res.blob(); files.push(new File([b], "shared", { type: b.type || "image/png" })); }
+        await inbox.delete(k);
+      }
+      if(files.length) handleFiles(files);
+    }catch(e){}
+    if(location.search) history.replaceState(null, "", location.pathname);
+  }
+  checkInbox();
+  document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") checkInbox(); });
+
+  // ---------- list ----------
+  function active(){ return items.filter(v => !v.used && !v.deleted).sort((a,b) => (a.expiry||"9999").localeCompare(b.expiry||"9999") || b.added - a.added); }
+  function codeBtn(v){
+    const b = document.createElement("button"); b.className = "code"; b.type = "button"; b.setAttribute("aria-label", "הצג להקראה " + v.code);
+    group(v.code).forEach(g => { const s = document.createElement("span"); s.textContent = g; b.appendChild(s); });
+    return b;
+  }
+  function mkBtn(text, cls, fn){ const b = document.createElement("button"); b.type = "button"; b.className = "small " + (cls||""); b.textContent = text; b.onclick = fn; return b; }
+  function mkSpan(text){ const e = document.createElement("span"); e.textContent = text; return e; }
+  function spacer(){ const e = document.createElement("span"); e.className = "sp"; return e; }
+
+  function render(){
+    const act = active();
+    const used = items.filter(v => v.used && !v.deleted).sort((a,b) => (b.usedAt||0) - (a.usedAt||0));
+    const trash = items.filter(v => v.deleted).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
+    const sumAmt = act.reduce((s,v) => s + (v.amount||0), 0);
+    const sum = $("sum");
+    if(!act.length) sum.textContent = used.length ? "כל התווים מומשו" : "אין עדיין תווים ברשימה";
+    else { sum.innerHTML = ""; const b = document.createElement("b"); b.textContent = act.length === 1 ? "תו פעיל אחד" : act.length + " תווים פעילים"; sum.appendChild(b); if(sumAmt) sum.append(", סך הכול " + money(sumAmt)); }
+
+    const list = $("list"); list.innerHTML = "";
+    if(!act.length && !used.length){
+      const li = document.createElement("li"); li.className = "empty";
+      li.textContent = "שתפו צילום מסך של תו לאפליקציה ״תווים״, או לחצו על ״הוספה מצילום מסך״.";
+      list.appendChild(li);
+    }
+    act.forEach(v => {
+      const li = document.createElement("li"); li.className = "item" + (lastAdded.has(v.code) ? " new" : "");
+      const cb = codeBtn(v); cb.onclick = () => openReader(v.id); li.appendChild(cb);
+      const m = document.createElement("div"); m.className = "meta";
+      const lab = document.createElement("label"); lab.textContent = "₪";
+      const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.placeholder = "סכום"; inp.value = v.amount ?? ""; inp.setAttribute("aria-label", "סכום התו");
+      inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.amount = isNaN(n) || n <= 0 ? null : n; lastAdded = new Set(); save(); };
+      lab.appendChild(inp); m.appendChild(lab);
+      m.append(spacer(), mkBtn("מחיקה", "del", () => removeItem(v.id)), mkBtn("מומש", "go", () => markUsed(v.id)));
+      li.appendChild(m); list.appendChild(li);
+    });
+    if(used.length){
+      const d = document.createElement("li"); d.className = "divider"; d.textContent = "מומשו"; list.appendChild(d);
+      used.forEach(v => {
+        const li = document.createElement("li"); li.className = "item faded";
+        const c = codeBtn(v); c.disabled = true; li.appendChild(c);
+        const m = document.createElement("div"); m.className = "meta";
+        if(v.amount) m.appendChild(mkSpan(money(v.amount)));
+        if(v.usedAt) m.appendChild(mkSpan("מומש ב-" + fmtDate(v.usedAt)));
+        m.append(spacer(), mkBtn("מחיקה", "del", () => removeItem(v.id)), mkBtn("החזר לפעילים", "", () => { v.used = false; delete v.usedAt; lastAdded = new Set(); save(); }));
+        li.appendChild(m); list.appendChild(li);
+      });
+    }
+    const tl = $("trashList"); tl.innerHTML = "";
+    $("trashBox").hidden = !trash.length; $("trashSum").textContent = "🗑️ פח (" + trash.length + ")";
+    trash.forEach(v => {
+      const li = document.createElement("li"); li.className = "item faded";
+      const c = codeBtn(v); c.disabled = true; li.appendChild(c);
+      const m = document.createElement("div"); m.className = "meta";
+      if(v.amount) m.appendChild(mkSpan(money(v.amount)));
+      if(v.deletedAt) m.appendChild(mkSpan("נמחק ב-" + fmtDate(v.deletedAt)));
+      m.append(spacer(), mkBtn("מחיקה לצמיתות", "del", () => purgeItem(v.id)), mkBtn("שחזור", "", () => { v.deleted = false; delete v.deletedAt; lastAdded = new Set([v.code]); save(); }));
+      li.appendChild(m); tl.appendChild(li);
+    });
+  }
+
+  // ---------- undo ----------
+  let undoSnap = null, toastT = 0;
+  function toast(msg, snap){
+    undoSnap = snap; $("toastMsg").textContent = msg; $("toastUndo").hidden = !snap; $("toast").classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(() => $("toast").classList.remove("show"), 5000);
+  }
+  $("toastUndo").onclick = () => { if(undoSnap){ items = undoSnap; undoSnap = null; lastAdded = new Set(); save(); } $("toast").classList.remove("show"); };
+  const snapshot = () => JSON.parse(JSON.stringify(items));
+  function markUsed(id){ const s = snapshot(); const v = items.find(x => x.id === id); if(!v) return; v.used = true; v.usedAt = Date.now(); lastAdded = new Set(); save(); toast("סומן כמומש", s); }
+  function removeItem(id){ const s = snapshot(); const v = items.find(x => x.id === id); if(!v) return; v.deleted = true; v.deletedAt = Date.now(); lastAdded = new Set(); save(); toast("התו הועבר לפח", s); }
+  function purgeItem(id){ const s = snapshot(); items = items.filter(x => x.id !== id); lastAdded = new Set(); save(); toast("התו נמחק לצמיתות", s); }
+
+  // ---------- backup ----------
+  $("exportBtn").onclick = () => {
+    const blob = new Blob([JSON.stringify({ version: 1, items, shots }, null, 1)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "tavim-backup-" + new Date().toISOString().slice(0,10) + ".json"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  $("importFile").onchange = async (ev) => {
+    const f = ev.target.files[0]; ev.target.value = ""; if(!f) return;
+    try{
+      const d = JSON.parse(await f.text());
+      const inc = Array.isArray(d) ? d : (d.items || []);
+      const known = new Set(items.map(v => v.code)); let n = 0;
+      inc.forEach(v => { if(v && /^\d{13}$/.test(v.code) && !known.has(v.code)){ items.push(Object.assign({ id: uid(), added: Date.now() }, v)); known.add(v.code); n++; } });
+      (d.shots || []).forEach(rememberShot);
+      save(); setStatus(n ? `נטענו ${n} תווים מהגיבוי.` : "כל התווים בגיבוי כבר נמצאים ברשימה.");
+    }catch(e){ setStatus("הקובץ הזה אינו קובץ גיבוי תקין.", true); }
+  };
+
+  // ---------- reading mode ----------
+  let curId = null, codeMode = localStorage.getItem(LS_MODE) || "qr";
+  function drawCode(v){
+    const qrBox = $("rQr"), barBox = $("rBarBox"), bar = $("rBar");
+    let qrOk = false, barOk = false;
+    try{ if(window.qrcode){ const q = qrcode(0, "M"); q.addData(v.code); q.make(); qrBox.innerHTML = q.createSvgTag(8, 4); qrOk = true; } }catch(e){}
+    try{ if(window.JsBarcode){ const ean = ean13ok(v.code);
+      JsBarcode(bar, ean ? v.code.slice(0,12) : v.code, { format: ean ? "EAN13" : "CODE128", lineColor:"#000", background:"#fff", height:80, width:2.2, fontSize:16, margin:6, displayValue:true }); barOk = true; } }catch(e){}
+    let mode = codeMode;
+    if(mode === "qr" && !qrOk) mode = "bar";
+    if(mode === "bar" && !barOk) mode = "qr";
+    qrBox.hidden = !(mode === "qr" && qrOk);
+    barBox.hidden = !(mode === "bar" && barOk);
+    document.querySelector(".seg").hidden = !(qrOk && barOk);
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  }
+  document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+    codeMode = b.dataset.mode; try { localStorage.setItem(LS_MODE, codeMode); } catch(e){}
+    const v = items.find(x => x.id === curId); if(v) drawCode(v);
+  });
+  let wakeLock = null;
+  function openReader(id){
+    const act = active(); const v = act.find(x => x.id === id); if(!v){ closeReader(); return; }
+    curId = id;
+    $("rPos").textContent = act.length > 1 ? `תו ${act.indexOf(v)+1} מתוך ${act.length}` : "";
+    const g = $("rGroups"); g.innerHTML = "";
+    group(v.code).forEach(s => { const e = document.createElement("span"); e.textContent = s; g.appendChild(e); });
+    $("rAmt").textContent = v.amount ? money(v.amount) : "";
+    drawCode(v);
+    $("rNext").hidden = act.length < 2;
+    $("reader").classList.add("open"); $("rClose").focus();
+    if(!wakeLock && navigator.wakeLock) navigator.wakeLock.request("screen").then(l => { wakeLock = l; }).catch(() => {});
+  }
+  function closeReader(){ $("reader").classList.remove("open"); curId = null; if(wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; } }
+  function nextAfter(id){ const act = active(); const i = act.findIndex(x => x.id === id); return act.length ? act[(i+1) % act.length] : null; }
+  $("rClose").onclick = closeReader;
+  $("rNext").onclick = () => { const n = nextAfter(curId); if(n) openReader(n.id); };
+  $("rUsed").onclick = () => {
+    const v = items.find(x => x.id === curId); if(!v) return closeReader();
+    const n = nextAfter(curId);
+    v.used = true; v.usedAt = Date.now(); lastAdded = new Set(); save();
+    if(n && n.id !== v.id) openReader(n.id); else { closeReader(); toast("כל התווים מומשו", null); }
+  };
+  document.addEventListener("keydown", e => { if(e.key === "Escape" && curId) closeReader(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
