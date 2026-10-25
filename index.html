@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f7a52">
+<meta name="theme-color" content="#c2410c">
 <title>התווים שלי</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -15,14 +15,14 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
 :root{
-  --paper:#f3f6f4; --card:#ffffff; --ink:#14261f; --muted:#5d6f67; --line:#d5dfda;
-  --accent:#0f7a52; --accent-ink:#ffffff; --hi:#ffe066; --danger:#b3261e; --warn:#8a5a00;
+  --paper:#fbf6f1; --card:#ffffff; --ink:#2a1a10; --muted:#7a6457; --line:#ecdccd;
+  --accent:#c2410c; --accent-ink:#ffffff; --hi:#ffd8a8; --danger:#b3261e; --warn:#a15c00;
   color-scheme:light; box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){
-  :root{ --paper:#0f1a16; --card:#17251f; --ink:#e8f1ec; --muted:#9db1a7; --line:#2a3b34;
-    --accent:#3fbf8a; --accent-ink:#06140e; --hi:#e8c547; --danger:#ff8a80; --warn:#f0c060; color-scheme:dark; }
+  :root{ --paper:#1a120c; --card:#24180f; --ink:#f5ebe3; --muted:#bfa898; --line:#3d2a1d;
+    --accent:#ff8a3d; --accent-ink:#1a0d04; --hi:#7a3d12; --danger:#ff8a80; --warn:#f0b35a; color-scheme:dark; }
 }
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"Rubik",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;line-height:1.5}
@@ -77,7 +77,15 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
 .shot.big{height:auto;max-height:70vh;object-fit:contain;cursor:zoom-out}
 .rv-note{font-size:14px;color:var(--muted);margin:0 0 8px}
 .rv-card.bad .rv-note{color:var(--danger)}
+.cand-wrap{margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
 .cand{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.cand-extra{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding-inline-start:30px;font-size:15px;color:var(--muted)}
+.cand-extra label,.meta label{display:flex;align-items:center;gap:6px}
+.cand-extra input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink)}
+.cand-extra .amt{width:84px;text-align:center}
+.meta input[type=date],.cand-extra input[type=date]{width:auto;min-width:9.5em}
+.exp.soon{color:var(--warn);font-weight:500}
+.exp.gone{color:var(--danger);font-weight:500}
 .cand .num{flex:1;min-width:0;font-size:20px;font-weight:700;letter-spacing:.04em;padding:10px 12px}
 .cand .flag{font-size:13px;color:var(--warn);min-width:4.5em}
 .cand input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none}
@@ -119,6 +127,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   <div class="manual" id="manual">
     <input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="20" aria-label="מספר התו">
     <input id="mAmt" class="num amt" inputmode="decimal" placeholder="סכום ₪" aria-label="סכום">
+    <input id="mExp" class="num" type="date" aria-label="בתוקף עד" title="בתוקף עד">
     <button class="primary" id="mAdd" type="button">הוסף</button>
   </div>
   <p class="status" id="status" role="status"></p>
@@ -207,8 +216,15 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const code = String(v.code || "").replace(/\D/g, "");
       if(code.length !== 13) continue;
       const ex = items.find(x => x.code === code);
-      if(ex){ if(ex.deleted) dupTrash++; else if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); } continue; }
-      items.unshift({ id: uid(), code, amount: v.amount > 0 ? v.amount : null, expiry: null, used: false, added: Date.now() });
+      const amount = v.amount > 0 ? v.amount : null;
+      const expiry = (typeof v.expiry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.expiry)) ? v.expiry : null;
+      if(ex){
+        if(ex.amount == null && amount) ex.amount = amount;
+        if(!ex.expiry && expiry) ex.expiry = expiry;
+        if(ex.deleted) dupTrash++; else if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); }
+        continue;
+      }
+      items.unshift({ id: uid(), code, amount, expiry, used: false, added: Date.now() });
       lastAdded.add(code); added++;
     }
     save();
@@ -230,9 +246,9 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     const code = $("mCode").value.replace(/\D/g, "");
     if(code.length !== 13){ setStatus("המספר צריך להכיל בדיוק 13 ספרות. הוקלדו " + code.length + ".", true); return; }
     const amt = parseFloat($("mAmt").value.replace(",", "."));
-    const r = addCodes([{ code, amount: isNaN(amt) ? null : amt }]);
+    const r = addCodes([{ code, amount: isNaN(amt) ? null : amt, expiry: $("mExp").value || null }]);
     setStatus(resultText(r), !r.added);
-    $("mCode").value = ""; $("mAmt").value = "";
+    $("mCode").value = ""; $("mAmt").value = ""; $("mExp").value = "";
   };
 
   // ---------- reading digits from a screenshot (on the phone) ----------
@@ -256,25 +272,78 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     ctx.drawImage(bmp, 0, 0, c.width, c.height);
     return c;
   }
+  // Find 13-digit codes, amounts and dates in the recognised text.
+  // The English model reads digits reliably; Hebrew words come out garbled,
+  // so currency signs are matched in the forms they usually take (₪ as "RI", ש"ח as n"v).
+  const CUR = '(?:₪|NIS|ILS|ש["״׳\']?ח|n["”״\']?[vwyY]|R[Il1|]?)';
+  const AMT1 = new RegExp(CUR + '\\s*(\\d{1,4}(?:[.,]\\d{1,2})?)(?![\\d/])', 'g');
+  const AMT2 = new RegExp('(?<![\\d.,/])(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*' + CUR, 'g');
+  const DATE = /(?<!\d)(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?!\d)/g;
+
   function extract(text){
-    const found = [], near = [];
-    for(let line of text.split(/\n+/)){
-      if((line.match(/\d/g) || []).length < 10) continue;
-      line = line.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1");
-      // split into chunks of digits separated only by spaces or dashes, then look for
-      // neighbouring groups that add up to exactly 13 digits
-      line.split(/[^\d\s\-–]+/).forEach(chunk => {
-        const g = chunk.match(/\d+/g) || [];
-        let hit = false;
-        for(let i = 0; i < g.length; i++){
-          let s = "";
-          for(let j = i; j < g.length && s.length < 13; j++){ s += g[j]; if(s.length === 13){ found.push(s); hit = true; } }
+    const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    const codes = [], amounts = [], dates = [];
+    lines.forEach((raw, li) => {
+      let m;
+      DATE.lastIndex = 0;
+      while((m = DATE.exec(raw))){
+        let d = +m[1], mo = +m[2], y = +m[3]; if(y < 100) y += 2000;
+        if(d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && y >= 2020 && y <= 2045)
+          dates.push({ li, iso: `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}` });
+      }
+      const noDates = raw.replace(DATE, " ");
+      // codes
+      if((noDates.match(/\d/g) || []).length >= 10){
+        const line = noDates.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1");
+        line.split(/[^\d\s\-–]+/).forEach(chunk => {
+          const g = chunk.match(/\d+/g) || [];
+          let hit = false;
+          for(let i = 0; i < g.length; i++){
+            let s = "";
+            for(let j = i; j < g.length && s.length < 13; j++){ s += g[j]; if(s.length === 13){ codes.push({ li, code: s, ok: true }); hit = true; } }
+          }
+          if(!hit){ const all = g.join(""); if(all.length >= 11 && all.length <= 15) codes.push({ li, code: all, ok: false }); }
+        });
+      }
+      // amounts (ignore long digit runs, which belong to codes)
+      const amtLine = noDates.replace(/\d[\d\s\-–]{9,}\d/g, " ");
+      const seen = new Set();
+      for(const re of [AMT1, AMT2]){
+        re.lastIndex = 0;
+        while((m = re.exec(amtLine))){
+          const val = parseFloat(m[1].replace(",", "."));
+          if(val >= 1 && val <= 10000 && !seen.has(val)){ seen.add(val); amounts.push({ li, val, strong: true }); }
         }
-        if(!hit){ const all = g.join(""); if(all.length >= 11 && all.length <= 15) near.push(all); }
-      });
-    }
-    const uniq = a => [...new Set(a)];
-    return { found: uniq(found), near: uniq(near).filter(n => !found.some(f => f.includes(n) || n.includes(f))) };
+      }
+      if(!seen.size && /^\D{0,3}\d{2,4}(?:[.,]\d{2})?\D{0,3}$/.test(amtLine)){
+        const val = parseFloat(amtLine.replace(/[^\d.,]/g, "").replace(",", "."));
+        if(val >= 5 && val <= 5000) amounts.push({ li, val, strong: false });
+      }
+    });
+
+    const byCode = new Map();
+    codes.forEach(c => { if(!byCode.has(c.code)) byCode.set(c.code, c); });
+    const list = [...byCode.values()].filter(c => c.ok || ![...byCode.values()].some(f => f.ok && (f.code.includes(c.code) || c.code.includes(f.code))));
+    const single = list.filter(c => c.ok).length <= 1;
+    const nearest = (arr, li, rank) => {
+      let best = null, bs = Infinity;
+      arr.forEach(x => { const d = Math.abs(x.li - li); if(d > 6) return; const sc = rank(x) * 100 + d + (x.li < li ? 0.5 : 0); if(sc < bs){ bs = sc; best = x; } });
+      return best;
+    };
+    const out = list.map(c => {
+      let amount = null, expiry = null;
+      if(single){
+        // one voucher: the clearest amount, and the latest date (the expiry, not the issue date)
+        const a = amounts.slice().sort((x, y) => (y.strong - x.strong) || (Math.abs(x.li - c.li) - Math.abs(y.li - c.li)))[0];
+        amount = a ? a.val : null;
+        expiry = dates.length ? dates.map(d => d.iso).sort().pop() : null;
+      } else {
+        const a = nearest(amounts, c.li, x => x.strong ? 0 : 1); amount = a ? a.val : null;
+        const d = nearest(dates, c.li, () => 0); expiry = d ? d.iso : null;
+      }
+      return { code: c.code, ok: c.ok, amount, expiry };
+    });
+    return { found: out.filter(c => c.ok), near: out.filter(c => !c.ok) };
   }
 
   // queue of screenshots to read; new ones can join while reading
@@ -337,21 +406,33 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     note.textContent = failed ? "לא הצלחתי לקרוא את הצילום. אפשר להקליד את המספר כאן." :
       res.found.length ? "" : res.near.length ? "מצאתי מספר, אבל לא בדיוק 13 ספרות. תקן אותו לפי הצילום." : "לא מצאתי מספר של 13 ספרות. אפשר להקליד אותו כאן, או להסיר את הצילום.";
     const rows = document.createElement("div");
-    const addRow = (val, checked) => {
+    const addRow = (obj, checked) => {
+      obj = obj || {};
+      const val = obj.code || "";
+      const wrap = document.createElement("div"); wrap.className = "cand-wrap";
       const row = document.createElement("div"); row.className = "cand";
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.setAttribute("aria-label", "להוסיף את המספר הזה");
       const inp = document.createElement("input"); inp.className = "num"; inp.inputMode = "numeric"; inp.value = val; inp.placeholder = "13 ספרות"; inp.setAttribute("aria-label", "מספר התו");
       const fl = document.createElement("span"); fl.className = "flag";
       const upd = () => { const n = inp.value.replace(/\D/g, "").length; fl.textContent = (n === 13 || n === 0) ? "" : n + " ספרות"; if(n === 13) cb.checked = true; };
       inp.oninput = upd; upd();
-      row.append(cb, inp, fl); rows.appendChild(row);
+      row.append(cb, inp, fl);
+      const ex = document.createElement("div"); ex.className = "cand-extra";
+      const la = document.createElement("label"); la.textContent = "סכום ₪";
+      const amt = document.createElement("input"); amt.className = "amt"; amt.inputMode = "decimal"; amt.value = obj.amount ?? ""; amt.placeholder = "לא נמצא";
+      la.appendChild(amt);
+      const ld = document.createElement("label"); ld.textContent = "בתוקף עד";
+      const dt = document.createElement("input"); dt.type = "date"; dt.className = "exp-in"; dt.value = obj.expiry || "";
+      ld.appendChild(dt);
+      ex.append(la, ld);
+      wrap.append(row, ex); rows.appendChild(wrap);
       return inp;
     };
     res.found.forEach(n => addRow(n, true));
     res.near.forEach(n => addRow(n, false));
-    if(!res.found.length && !res.near.length) addRow("", false);
+    if(!res.found.length && !res.near.length) addRow(null, false);
     const acts = document.createElement("div"); acts.className = "rv-actions";
-    acts.append(mkBtn("עוד מספר", "", () => addRow("", false).focus()), mkBtn("הסרת הצילום", "del", () => dropCard(card, true)));
+    acts.append(mkBtn("עוד מספר", "", () => addRow(null, false).focus()), mkBtn("הסרת הצילום", "del", () => dropCard(card, true)));
     card.append(img); if(note.textContent) card.append(note); card.append(rows, acts);
     $("rvList").appendChild(card);
     updateReview();
@@ -372,12 +453,15 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     const cards = [...$("rvList").children];
     const toAdd = []; let bad = 0, empty = 0;
     cards.forEach(card => {
-      const codes = [...card.querySelectorAll(".cand")].filter(r => r.querySelector("input[type=checkbox]").checked)
-        .map(r => r.querySelector(".num").value.replace(/\D/g, ""));
+      const codes = [...card.querySelectorAll(".cand-wrap")].filter(r => r.querySelector("input[type=checkbox]").checked)
+        .map(r => {
+          const n = parseFloat(r.querySelector(".amt").value.replace(",", "."));
+          return { code: r.querySelector(".num").value.replace(/\D/g, ""), amount: isNaN(n) ? null : n, expiry: r.querySelector(".exp-in").value || null };
+        });
       if(!codes.length){ empty++; return; }
-      if(codes.some(c => c.length !== 13)){ bad++; card.classList.add("bad"); return; }
+      if(codes.some(c => c.code.length !== 13)){ bad++; card.classList.add("bad"); return; }
       card.classList.remove("bad");
-      codes.forEach(code => toAdd.push({ code }));
+      codes.forEach(c => toAdd.push(c));
       rememberShot(card._hash);
       dropCard(card, false);
     });
@@ -420,6 +504,14 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   function mkSpan(text){ const e = document.createElement("span"); e.textContent = text; return e; }
   function spacer(){ const e = document.createElement("span"); e.className = "sp"; return e; }
 
+  function daysLeft(iso){ if(!iso) return null; const [y,mo,d] = iso.split("-").map(Number); const t = new Date(); t.setHours(0,0,0,0); return Math.round((new Date(y, mo-1, d) - t) / 864e5); }
+  const isoToHe = iso => iso.split("-").reverse().join("/");
+  function expState(iso){
+    const n = daysLeft(iso); if(n === null || n > 30) return null;
+    const e = document.createElement("span"); e.className = "exp " + (n < 0 ? "gone" : "soon");
+    e.textContent = n < 0 ? "פג תוקף" : n === 0 ? "פג היום" : n === 1 ? "פג מחר" : `פג בעוד ${n} ימים`;
+    return e;
+  }
   function render(){
     const act = active();
     const used = items.filter(v => v.used && !v.deleted).sort((a,b) => (b.usedAt||0) - (a.usedAt||0));
@@ -443,6 +535,11 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.placeholder = "סכום"; inp.value = v.amount ?? ""; inp.setAttribute("aria-label", "סכום התו");
       inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.amount = isNaN(n) || n <= 0 ? null : n; lastAdded = new Set(); save(); };
       lab.appendChild(inp); m.appendChild(lab);
+      const ld = document.createElement("label"); ld.textContent = "תוקף";
+      const dt = document.createElement("input"); dt.type = "date"; dt.value = v.expiry || ""; dt.setAttribute("aria-label", "בתוקף עד");
+      dt.onchange = () => { v.expiry = dt.value || null; lastAdded = new Set(); save(); };
+      ld.appendChild(dt); m.appendChild(ld);
+      const st = expState(v.expiry); if(st) m.appendChild(st);
       m.append(spacer(), mkBtn("מחיקה", "del", () => removeItem(v.id)), mkBtn("מומש", "go", () => markUsed(v.id)));
       li.appendChild(m); list.appendChild(li);
     });
@@ -529,7 +626,10 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     $("rPos").textContent = act.length > 1 ? `תו ${act.indexOf(v)+1} מתוך ${act.length}` : "";
     const g = $("rGroups"); g.innerHTML = "";
     group(v.code).forEach(s => { const e = document.createElement("span"); e.textContent = s; g.appendChild(e); });
-    $("rAmt").textContent = v.amount ? money(v.amount) : "";
+    const parts = [];
+    if(v.amount) parts.push(money(v.amount));
+    if(v.expiry){ const n = daysLeft(v.expiry); parts.push((n < 0 ? "פג תוקף ב-" : "בתוקף עד ") + isoToHe(v.expiry)); }
+    $("rAmt").textContent = parts.join(", ");
     drawCode(v);
     $("rNext").hidden = act.length < 2;
     $("reader").classList.add("open"); $("rClose").focus();
