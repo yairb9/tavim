@@ -38,11 +38,15 @@ button:focus-visible,.btn:focus-within,input:focus-visible,summary:focus-visible
 input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
 .status{margin:0 0 12px;color:var(--muted);font-size:15px}
 .status.err{color:var(--danger)}
-.manual{display:none;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.manual.open{display:flex}
+.manual{display:none;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+.manual.open{display:grid}
+.fld{display:flex;flex-direction:column;gap:4px;font-size:14px;font-weight:500;color:var(--muted);min-width:0}
+.fld.wide,.mbtns{grid-column:1/-1}
+.fld .num{width:100%;min-width:0}
+.mbtns{display:flex;gap:10px}
+.mbtns .primary{flex:1}
 .num{font:inherit;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);direction:ltr;text-align:left;font-variant-numeric:tabular-nums}
-.manual .num{flex:1 1 180px}
-.manual .num.amt{flex:0 1 110px}
+
 .list{display:flex;flex-direction:column;gap:12px;padding:0;margin:0;list-style:none}
 .item{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 14px 10px}
 .code{all:unset;display:block;width:100%;cursor:pointer;direction:ltr;text-align:center;font-size:clamp(24px,7.4vw,32px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;padding:6px 0 8px;border-radius:10px}
@@ -124,14 +128,23 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
 
   <div class="actions">
     <label class="btn primary" for="file">הוספה מצילום מסך</label>
-    <button class="ghost" id="manualBtn" type="button">הקלדה ידנית</button>
+    <button class="ghost" id="manualBtn" type="button" aria-expanded="false" aria-controls="manual">הקלדה ידנית</button>
   </div>
   <input type="file" id="file" accept="image/*" multiple>
   <div class="manual" id="manual">
-    <input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="20" aria-label="מספר התו">
-    <input id="mAmt" class="num amt" inputmode="decimal" placeholder="סכום ₪" aria-label="סכום">
-    <input id="mExp" class="num" type="date" aria-label="בתוקף עד" title="בתוקף עד">
-    <button class="primary" id="mAdd" type="button">הוסף</button>
+    <label class="fld wide">מספר התו
+      <input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="20">
+    </label>
+    <label class="fld">סכום (₪)
+      <input id="mAmt" class="num" inputmode="decimal" placeholder="לא חובה">
+    </label>
+    <label class="fld">תאריך הטענה
+      <input id="mExp" class="num" type="date">
+    </label>
+    <div class="mbtns">
+      <button class="primary" id="mAdd" type="button">הוסף</button>
+      <button class="ghost" id="mCancel" type="button">ביטול</button>
+    </div>
   </div>
   <p class="status" id="status" role="status"></p>
 
@@ -208,6 +221,14 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   let items = load(LS, []), shots = load(LS_SHOTS, []);
   let lastAdded = new Set();
 
+  // The voucher shows its load date (תאריך הטענה); it is valid for 5 years from then.
+  const ISO = /^\d{4}-\d{2}-\d{2}$/;
+  const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`; };
+  const plusYears = (iso, n) => { const [y,m,d] = iso.split("-"); return `${+y + n}-${m}-${d}`; };
+  const expiryOf = v => v.loaded ? plusYears(v.loaded, 5) : (v.expiry || null);
+  // earlier versions saved the date they found as an expiry date; a date in the past is really the load date
+  items.forEach(v => { if(!v.loaded && v.expiry && v.expiry <= todayIso()){ v.loaded = v.expiry; delete v.expiry; } });
+
   const group = c => [c.slice(0,3), c.slice(3,6), c.slice(6,9), c.slice(9)];
   const money = n => "₪" + (Math.round(n*100)/100).toLocaleString("he-IL");
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -240,23 +261,23 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       if(code.length !== 13) continue;
       const ex = items.find(x => x.code === code);
       const amount = v.amount > 0 ? v.amount : null;
-      const expiry = (typeof v.expiry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.expiry)) ? v.expiry : null;
+      const loaded = (typeof v.loaded === "string" && ISO.test(v.loaded)) ? v.loaded : null;
       if(ex){
         if(ex.deleted){
           // read again after deleting: bring it back from the trash with the new details
           ex.deleted = false; delete ex.deletedAt; ex.used = false; delete ex.usedAt;
-          if(amount) ex.amount = amount; if(expiry) ex.expiry = expiry; if(v.shot) ex.shot = v.shot;
+          if(amount) ex.amount = amount; if(loaded){ ex.loaded = loaded; delete ex.expiry; } if(v.shot) ex.shot = v.shot;
           restored++; lastAdded.add(code); continue;
         }
         let changed = false;
         if(ex.amount == null && amount){ ex.amount = amount; changed = true; }
-        if(!ex.expiry && expiry){ ex.expiry = expiry; changed = true; }
+        if(!ex.loaded && loaded){ ex.loaded = loaded; delete ex.expiry; changed = true; }
         if(v.shot && !ex.shot) ex.shot = v.shot;
         if(changed) updated++;
         if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); }
         continue;
       }
-      items.unshift({ id: uid(), code, amount, expiry, shot: v.shot || null, used: false, added: Date.now() });
+      items.unshift({ id: uid(), code, amount, loaded, shot: v.shot || null, used: false, added: Date.now() });
       lastAdded.add(code); added++;
     }
     save();
@@ -270,18 +291,26 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     if(r.dup) p.push(r.dup === 1 ? "תו אחד כבר נמצא ברשימה (מסומן בצהוב), ולא נוסף שוב." : `${r.dup} תווים כבר נמצאים ברשימה (מסומנים בצהוב), ולא נוספו שוב.`);
     if(r.dupUsed) p.push(r.dupUsed === 1 ? "תו אחד כבר מומש בעבר, ולא נוסף." : `${r.dupUsed} תווים כבר מומשו בעבר, ולא נוספו.`);
     if(r.restored) p.push(r.restored === 1 ? "תו אחד שהיה בפח חזר לרשימה." : `${r.restored} תווים שהיו בפח חזרו לרשימה.`);
-    if(r.updated) p.push(r.updated === 1 ? "בתו אחד הושלמו סכום או תאריך." : `ב-${r.updated} תווים הושלמו סכום או תאריך.`);
+    if(r.updated) p.push(r.updated === 1 ? "בתו אחד הושלמו סכום או תאריך הטענה." : `ב-${r.updated} תווים הושלמו סכום או תאריך הטענה.`);
     return p.join(" ");
   }
 
-  $("manualBtn").onclick = () => { $("manual").classList.toggle("open"); if($("manual").classList.contains("open")) $("mCode").focus(); };
+  function setManual(open){
+    $("manual").classList.toggle("open", open);
+    $("manualBtn").textContent = open ? "סגירה" : "הקלדה ידנית";
+    $("manualBtn").setAttribute("aria-expanded", String(open));
+    if(open) $("mCode").focus();
+    else { $("mCode").value = ""; $("mAmt").value = ""; $("mExp").value = ""; }
+  }
+  $("manualBtn").onclick = () => setManual(!$("manual").classList.contains("open"));
+  $("mCancel").onclick = () => setManual(false);
   $("mAdd").onclick = () => {
     const code = $("mCode").value.replace(/\D/g, "");
     if(code.length !== 13){ setStatus("המספר צריך להכיל בדיוק 13 ספרות. הוקלדו " + code.length + ".", true); return; }
     const amt = parseFloat($("mAmt").value.replace(",", "."));
-    const r = addCodes([{ code, amount: isNaN(amt) ? null : amt, expiry: $("mExp").value || null }]);
-    setStatus(resultText(r), !r.added);
-    $("mCode").value = ""; $("mAmt").value = ""; $("mExp").value = "";
+    const r = addCodes([{ code, amount: isNaN(amt) ? null : amt, loaded: $("mExp").value || null }]);
+    setStatus(resultText(r), !(r.added || r.restored || r.updated));
+    setManual(false);
   };
 
   // ---------- reading digits from a screenshot (on the phone) ----------
@@ -321,7 +350,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       DATE.lastIndex = 0;
       while((m = DATE.exec(raw))){
         let d = +m[1], mo = +m[2], y = +m[3]; if(y < 100) y += 2000;
-        if(d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && y >= 2020 && y <= 2045)
+        if(d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && y >= 2015 && y <= 2045)
           dates.push({ li, iso: `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}` });
       }
       const noDates = raw.replace(DATE, " ");
@@ -363,18 +392,21 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       arr.forEach(x => { const d = Math.abs(x.li - li); if(d > 6) return; const sc = rank(x) * 100 + d + (x.li < li ? 0.5 : 0); if(sc < bs){ bs = sc; best = x; } });
       return best;
     };
+    const today = todayIso();
     const out = list.map(c => {
-      let amount = null, expiry = null;
+      let amount = null, loaded = null;
       if(single){
-        // one voucher: the clearest amount, and the latest date (the expiry, not the issue date)
+        // one voucher: the clearest amount, and the load date, which is the earliest date (and not in the future)
         const a = amounts.slice().sort((x, y) => (y.strong - x.strong) || (Math.abs(x.li - c.li) - Math.abs(y.li - c.li)))[0];
         amount = a ? a.val : null;
-        expiry = dates.length ? dates.map(d => d.iso).sort().pop() : null;
+        const all = dates.map(d => d.iso).sort();
+        const past = all.filter(d => d <= today);
+        loaded = past.length ? past[0] : (all[0] || null);
       } else {
         const a = nearest(amounts, c.li, x => x.strong ? 0 : 1); amount = a ? a.val : null;
-        const d = nearest(dates, c.li, () => 0); expiry = d ? d.iso : null;
+        const d = nearest(dates, c.li, x => x.iso <= today ? 0 : 1); loaded = d ? d.iso : null;
       }
-      return { code: c.code, ok: c.ok, amount, expiry };
+      return { code: c.code, ok: c.ok, amount, loaded };
     });
     return { found: out.filter(c => c.ok), near: out.filter(c => !c.ok) };
   }
@@ -454,10 +486,13 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const la = document.createElement("label"); la.textContent = "סכום ₪";
       const amt = document.createElement("input"); amt.className = "amt"; amt.inputMode = "decimal"; amt.value = obj.amount ?? ""; amt.placeholder = "לא נמצא";
       la.appendChild(amt);
-      const ld = document.createElement("label"); ld.textContent = "בתוקף עד";
-      const dt = document.createElement("input"); dt.type = "date"; dt.className = "exp-in"; dt.value = obj.expiry || "";
+      const ld = document.createElement("label"); ld.textContent = "תאריך הטענה";
+      const dt = document.createElement("input"); dt.type = "date"; dt.className = "exp-in"; dt.value = obj.loaded || "";
       ld.appendChild(dt);
-      ex.append(la, ld);
+      const until = document.createElement("span");
+      const showUntil = () => { until.textContent = dt.value ? "בתוקף עד " + isoToHe(plusYears(dt.value, 5)) : ""; };
+      dt.onchange = showUntil; showUntil();
+      ex.append(la, ld, until);
       wrap.append(row, ex); rows.appendChild(wrap);
       return inp;
     };
@@ -489,7 +524,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const codes = [...card.querySelectorAll(".cand-wrap")].filter(r => r.querySelector("input[type=checkbox]").checked)
         .map(r => {
           const n = parseFloat(r.querySelector(".amt").value.replace(",", "."));
-          return { code: r.querySelector(".num").value.replace(/\D/g, ""), amount: isNaN(n) ? null : n, expiry: r.querySelector(".exp-in").value || null, shot: card._hash || null };
+          return { code: r.querySelector(".num").value.replace(/\D/g, ""), amount: isNaN(n) ? null : n, loaded: r.querySelector(".exp-in").value || null, shot: card._hash || null };
         });
       if(!codes.length){ empty++; return; }
       if(codes.some(c => c.code.length !== 13)){ bad++; card.classList.add("bad"); return; }
@@ -527,7 +562,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") checkInbox(); });
 
   // ---------- list ----------
-  function active(){ return items.filter(v => !v.used && !v.deleted).sort((a,b) => (a.expiry||"9999").localeCompare(b.expiry||"9999") || b.added - a.added); }
+  function active(){ return items.filter(v => !v.used && !v.deleted).sort((a,b) => (expiryOf(a)||"9999").localeCompare(expiryOf(b)||"9999") || b.added - a.added); }
   function codeBtn(v){
     const b = document.createElement("button"); b.className = "code"; b.type = "button"; b.setAttribute("aria-label", "הצג להקראה " + v.code);
     group(v.code).forEach(g => { const s = document.createElement("span"); s.textContent = g; b.appendChild(s); });
@@ -568,11 +603,11 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.placeholder = "סכום"; inp.value = v.amount ?? ""; inp.setAttribute("aria-label", "סכום התו");
       inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.amount = isNaN(n) || n <= 0 ? null : n; lastAdded = new Set(); save(); };
       lab.appendChild(inp); m.appendChild(lab);
-      const ld = document.createElement("label"); ld.textContent = "תוקף";
-      const dt = document.createElement("input"); dt.type = "date"; dt.value = v.expiry || ""; dt.setAttribute("aria-label", "בתוקף עד");
-      dt.onchange = () => { v.expiry = dt.value || null; lastAdded = new Set(); save(); };
+      const ld = document.createElement("label"); ld.textContent = "הטענה";
+      const dt = document.createElement("input"); dt.type = "date"; dt.value = v.loaded || ""; dt.setAttribute("aria-label", "תאריך הטענה");
+      dt.onchange = () => { v.loaded = dt.value || null; delete v.expiry; lastAdded = new Set(); save(); };
       ld.appendChild(dt); m.appendChild(ld);
-      const st = expState(v.expiry); if(st) m.appendChild(st);
+      const st = expState(expiryOf(v)); if(st) m.appendChild(st);
       m.append(spacer(), mkBtn("מחיקה", "del", () => removeItem(v.id)), mkBtn("מומש", "go", () => markUsed(v.id)));
       li.appendChild(m); list.appendChild(li);
     });
@@ -684,7 +719,9 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     group(v.code).forEach(s => { const e = document.createElement("span"); e.textContent = s; g.appendChild(e); });
     const parts = [];
     if(v.amount) parts.push(money(v.amount));
-    if(v.expiry){ const n = daysLeft(v.expiry); parts.push((n < 0 ? "פג תוקף ב-" : "בתוקף עד ") + isoToHe(v.expiry)); }
+    if(v.loaded) parts.push("הוטען ב-" + isoToHe(v.loaded));
+    const exp = expiryOf(v);
+    if(exp && daysLeft(exp) <= 30) parts.push((daysLeft(exp) < 0 ? "פג תוקף ב-" : "בתוקף עד ") + isoToHe(exp));
     $("rAmt").textContent = parts.join(", ");
     drawCode(v);
     $("rNext").hidden = act.length < 2;
