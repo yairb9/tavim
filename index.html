@@ -243,6 +243,9 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     if(!v.loaded && v.expiry && v.expiry <= todayIso()){ v.loaded = v.expiry; delete v.expiry; }
     // one "amount" field became two: what was loaded, and what is left
     if(v.balance === undefined && "amount" in v){ v.balance = v.amount ?? null; v.loadAmount = v.amount ?? null; delete v.amount; }
+    // an earlier version sometimes read a stray "1" as an amount; clear it unless the user set it
+    if(v.loadAmount === 1) v.loadAmount = null;
+    if(v.balance === 1 && !v.balanceSetAt) v.balance = null;
     return v;
   }
   items.forEach(migrate);
@@ -359,9 +362,15 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   // Find 13-digit codes, amounts and dates in the recognised text.
   // The English model reads digits reliably; Hebrew words come out garbled,
   // so currency signs are matched in the forms they usually take (₪ as "RI", "M" or "w", ש"ח as n"v).
-  const CUR = '(?:₪|NIS|ILS|ש["״׳\']?ח|n["”״\']?[vwyY]|R[Il1|]?|M|[wW])';
-  const AMT1 = new RegExp(CUR + '\\s*(\\d{1,4}(?:[.,]\\d{1,2})?)(?![\\d/])', 'g');
-  const AMT2 = new RegExp('(?<![\\d.,/])(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*' + CUR, 'g');
+  // Real currency signs may stand apart from the number. Single letters that the
+  // reader sometimes makes of ₪ ("M", "w", "RI") only count when glued to the number,
+  // because garbled Hebrew is full of such letters next to stray digits.
+  const CUR_REAL = '(?:₪|NIS|ILS|ש["״׳\']?ח|n["”״\'][vwyY])';
+  const CUR_LETTER = '(?:R[Il1|]\\s?|M|[wW])';
+  const NUM = '(\\d{1,4}(?:[.,]\\d{1,2})?)';
+  const AMT_REAL1 = new RegExp(CUR_REAL + '\\s*' + NUM + '(?![\\d/])', 'g');
+  const AMT_REAL2 = new RegExp('(?<![\\d.,/])' + NUM + '\\s*' + CUR_REAL, 'g');
+  const AMT_LETTER = new RegExp('(?<![A-Za-z0-9])' + CUR_LETTER + NUM + '(?![\\d/A-Za-z])', 'g');
   const DATE = /(?<!\d)(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?!\d)/g;
   const DATE_YMD = /(?<!\d)(20\d{2})[\/.\-](\d{1,2})[\/.\-](\d{1,2})(?!\d)/g;   // 2026-10-25, as Multipass shows it
 
@@ -397,11 +406,11 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       // amounts (ignore long digit runs, which belong to codes)
       const amtLine = noDates.replace(/\d[\d\s\-–]{9,}\d/g, " ");
       const seen = new Set();
-      for(const re of [AMT1, AMT2]){
+      for(const [re, min] of [[AMT_REAL1, 1], [AMT_REAL2, 1], [AMT_LETTER, 5]]){
         re.lastIndex = 0;
         while((m = re.exec(amtLine))){
           const val = parseFloat(m[1].replace(",", "."));
-          if(val >= 1 && val <= 10000 && !seen.has(val)){ seen.add(val); amounts.push({ li, val, strong: true }); }
+          if(val >= min && val <= 10000 && !seen.has(val)){ seen.add(val); amounts.push({ li, val, strong: true }); }
         }
       }
       if(!seen.size && /^\D{0,3}\d{2,4}(?:[.,]\d{2})?\D{0,3}$/.test(amtLine)){
@@ -637,7 +646,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const m = document.createElement("div"); m.className = "meta";
       const lab = document.createElement("label"); lab.textContent = "יתרה ₪";
       const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.placeholder = "?"; inp.value = balOf(v) ?? ""; inp.setAttribute("aria-label", "יתרה");
-      inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.balance = isNaN(n) || n < 0 ? null : Math.round(n*100)/100; if(v.loadAmount == null) v.loadAmount = v.balance; lastAdded = new Set(); save(); };
+      inp.onchange = () => { const n = parseFloat(inp.value.replace(",", ".")); v.balance = isNaN(n) || n < 0 ? null : Math.round(n*100)/100; v.balanceSetAt = Date.now(); if(v.loadAmount == null) v.loadAmount = v.balance; lastAdded = new Set(); save(); };
       lab.appendChild(inp); m.appendChild(lab);
       if(v.loadAmount != null) m.appendChild(mkSpan("הוטען " + money(v.loadAmount)));
       const ld = document.createElement("label"); ld.textContent = "הטענה";
@@ -790,7 +799,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       if(n && n.id !== v.id) openReader(n.id); else closeReader();
       toast("נוצלה כל היתרה, התו סומן כמומש", s, 8000);
     } else {
-      v.balance = left; if(v.loadAmount == null) v.loadAmount = bal;
+      v.balance = left; v.balanceSetAt = Date.now(); if(v.loadAmount == null) v.loadAmount = bal;
       lastAdded = new Set(); save(); openReader(v.id);
       toast("היתרה עודכנה ל-" + money(left), s, 8000);
     }
