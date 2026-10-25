@@ -62,6 +62,9 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
 details{margin-top:22px}
 summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
 .backup{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.confirm{margin-top:12px;border:1.5px solid var(--danger);border-radius:12px;padding:12px}
+.confirm p{margin:0;font-size:15px}
+.small.go.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 /* progress + review of scanned screenshots */
 .bulk{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:0 0 14px}
 .bulk .track{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
@@ -152,12 +155,25 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   <details id="trashBox" hidden><summary id="trashSum"></summary><ul class="list" id="trashList"></ul></details>
 
   <details>
-    <summary>גיבוי</summary>
+    <summary>גיבוי ואיפוס</summary>
     <p style="color:var(--muted);font-size:15px;margin:6px 0 0">הרשימה שמורה רק בטלפון הזה. קובץ גיבוי מאפשר להעביר אותה לטלפון אחר או לשחזר אותה.</p>
     <div class="backup">
       <button class="small" id="exportBtn" type="button">שמירת קובץ גיבוי</button>
       <label class="btn small" for="importFile">טעינת קובץ גיבוי</label>
       <input type="file" id="importFile" accept="application/json,.json">
+    </div>
+    <p style="color:var(--muted);font-size:15px;margin:16px 0 0">איפוס זיכרון הצילומים מאפשר לקרוא שוב צילומי מסך שכבר נקראו, בלי לגעת ברשימה. תווים שכבר ברשימה יקבלו סכום ותאריך אם חסרים להם.</p>
+    <div class="backup">
+      <button class="small" id="resetShotsBtn" type="button">איפוס זיכרון הצילומים</button>
+      <button class="small del" id="resetAllBtn" type="button">איפוס מלא</button>
+    </div>
+    <div class="confirm" id="resetConfirm" hidden>
+      <p><b>למחוק הכול?</b> הפעולה מוחקת את כל התווים (פעילים, ממומשים ובפח) ואת זיכרון הצילומים. מומלץ לשמור קודם קובץ גיבוי.</p>
+      <div class="backup">
+        <button class="small" id="resetBackupFirst" type="button">שמירת גיבוי קודם</button>
+        <button class="small go danger" id="resetYes" type="button">כן, למחוק הכול</button>
+        <button class="small" id="resetNo" type="button">ביטול</button>
+      </div>
     </div>
   </details>
 </div>
@@ -207,11 +223,18 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
     try{ const h = await crypto.subtle.digest("SHA-256", await f.arrayBuffer());
       return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2,"0")).join(""); }catch(e){ return null; }
   }
+  function shotKnown(h){
+    if(!shots.includes(h)) return false;
+    const linked = items.filter(v => v.shot === h);
+    // screenshots from older versions have no link to their vouchers, so they stay known until a reset
+    return !linked.length || linked.some(v => !v.deleted);
+  }
+  function forgetShotIfUnused(h){ if(h && !items.some(v => v.shot === h)) shots = shots.filter(x => x !== h); }
   function rememberShot(h){ if(!h || shots.includes(h)) return; shots.push(h); if(shots.length > 500) shots = shots.slice(-500); }
 
   // ---------- adding ----------
   function addCodes(list){
-    let added = 0, dup = 0, dupUsed = 0, dupTrash = 0; lastAdded = new Set();
+    let added = 0, dup = 0, dupUsed = 0, dupTrash = 0, restored = 0, updated = 0; lastAdded = new Set();
     for(const v of list){
       const code = String(v.code || "").replace(/\D/g, "");
       if(code.length !== 13) continue;
@@ -219,25 +242,35 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const amount = v.amount > 0 ? v.amount : null;
       const expiry = (typeof v.expiry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.expiry)) ? v.expiry : null;
       if(ex){
-        if(ex.amount == null && amount) ex.amount = amount;
-        if(!ex.expiry && expiry) ex.expiry = expiry;
-        if(ex.deleted) dupTrash++; else if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); }
+        if(ex.deleted){
+          // read again after deleting: bring it back from the trash with the new details
+          ex.deleted = false; delete ex.deletedAt; ex.used = false; delete ex.usedAt;
+          if(amount) ex.amount = amount; if(expiry) ex.expiry = expiry; if(v.shot) ex.shot = v.shot;
+          restored++; lastAdded.add(code); continue;
+        }
+        let changed = false;
+        if(ex.amount == null && amount){ ex.amount = amount; changed = true; }
+        if(!ex.expiry && expiry){ ex.expiry = expiry; changed = true; }
+        if(v.shot && !ex.shot) ex.shot = v.shot;
+        if(changed) updated++;
+        if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); }
         continue;
       }
-      items.unshift({ id: uid(), code, amount, expiry, used: false, added: Date.now() });
+      items.unshift({ id: uid(), code, amount, expiry, shot: v.shot || null, used: false, added: Date.now() });
       lastAdded.add(code); added++;
     }
     save();
     const first = document.querySelector(".item.new");
     if(first) first.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    return { added, dup, dupUsed, dupTrash };
+    return { added, dup, dupUsed, dupTrash, restored, updated };
   }
   function resultText(r){
     const p = [];
     if(r.added) p.push(r.added === 1 ? "נוסף תו אחד." : `נוספו ${r.added} תווים.`);
     if(r.dup) p.push(r.dup === 1 ? "תו אחד כבר נמצא ברשימה (מסומן בצהוב), ולא נוסף שוב." : `${r.dup} תווים כבר נמצאים ברשימה (מסומנים בצהוב), ולא נוספו שוב.`);
     if(r.dupUsed) p.push(r.dupUsed === 1 ? "תו אחד כבר מומש בעבר, ולא נוסף." : `${r.dupUsed} תווים כבר מומשו בעבר, ולא נוספו.`);
-    if(r.dupTrash) p.push(r.dupTrash === 1 ? "תו אחד נמצא בפח. אפשר לשחזר אותו משם." : `${r.dupTrash} תווים נמצאים בפח. אפשר לשחזר אותם משם.`);
+    if(r.restored) p.push(r.restored === 1 ? "תו אחד שהיה בפח חזר לרשימה." : `${r.restored} תווים שהיו בפח חזרו לרשימה.`);
+    if(r.updated) p.push(r.updated === 1 ? "בתו אחד הושלמו סכום או תאריך." : `ב-${r.updated} תווים הושלמו סכום או תאריך.`);
     return p.join(" ");
   }
 
@@ -360,7 +393,7 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
   async function handleFiles(files){
     for(const f of files){
       const h = await fileHash(f);
-      if(h && (shots.includes(h) || run.hashes.has(h))){ run.same++; continue; }
+      if(h && (shotKnown(h) || run.hashes.has(h))){ run.same++; continue; }
       if(h) run.hashes.add(h);
       run.queue.push({ file: f, hash: h }); run.total++;
     }
@@ -456,14 +489,14 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
       const codes = [...card.querySelectorAll(".cand-wrap")].filter(r => r.querySelector("input[type=checkbox]").checked)
         .map(r => {
           const n = parseFloat(r.querySelector(".amt").value.replace(",", "."));
-          return { code: r.querySelector(".num").value.replace(/\D/g, ""), amount: isNaN(n) ? null : n, expiry: r.querySelector(".exp-in").value || null };
+          return { code: r.querySelector(".num").value.replace(/\D/g, ""), amount: isNaN(n) ? null : n, expiry: r.querySelector(".exp-in").value || null, shot: card._hash || null };
         });
       if(!codes.length){ empty++; return; }
       if(codes.some(c => c.code.length !== 13)){ bad++; card.classList.add("bad"); return; }
       card.classList.remove("bad");
       codes.forEach(c => toAdd.push(c));
       rememberShot(card._hash);
-      dropCard(card, false);
+      dropCard(card, true);
     });
     const p = [];
     if(toAdd.length){ const r = addCodes(toAdd); p.push(resultText(r)); }
@@ -570,15 +603,38 @@ summary{cursor:pointer;color:var(--muted);padding:6px 0;font-weight:500}
 
   // ---------- undo ----------
   let undoSnap = null, toastT = 0;
-  function toast(msg, snap){
+  function toast(msg, snap, ms){
     undoSnap = snap; $("toastMsg").textContent = msg; $("toastUndo").hidden = !snap; $("toast").classList.add("show");
-    clearTimeout(toastT); toastT = setTimeout(() => $("toast").classList.remove("show"), 5000);
+    clearTimeout(toastT); toastT = setTimeout(() => $("toast").classList.remove("show"), ms || 5000);
   }
-  $("toastUndo").onclick = () => { if(undoSnap){ items = undoSnap; undoSnap = null; lastAdded = new Set(); save(); } $("toast").classList.remove("show"); };
-  const snapshot = () => JSON.parse(JSON.stringify(items));
+  $("toastUndo").onclick = () => { if(undoSnap){ items = undoSnap.items; shots = undoSnap.shots; undoSnap = null; lastAdded = new Set(); save(); } $("toast").classList.remove("show"); };
+  const snapshot = () => JSON.parse(JSON.stringify({ items, shots }));
   function markUsed(id){ const s = snapshot(); const v = items.find(x => x.id === id); if(!v) return; v.used = true; v.usedAt = Date.now(); lastAdded = new Set(); save(); toast("סומן כמומש", s); }
   function removeItem(id){ const s = snapshot(); const v = items.find(x => x.id === id); if(!v) return; v.deleted = true; v.deletedAt = Date.now(); lastAdded = new Set(); save(); toast("התו הועבר לפח", s); }
-  function purgeItem(id){ const s = snapshot(); items = items.filter(x => x.id !== id); lastAdded = new Set(); save(); toast("התו נמחק לצמיתות", s); }
+  function purgeItem(id){
+    const s = snapshot(); const v = items.find(x => x.id === id);
+    items = items.filter(x => x.id !== id); if(v) forgetShotIfUnused(v.shot);
+    lastAdded = new Set(); save(); toast("התו נמחק לצמיתות", s);
+  }
+
+  // ---------- reset ----------
+  $("resetShotsBtn").onclick = () => {
+    const s = snapshot(); shots = []; run.hashes.clear(); save();
+    setStatus("זיכרון הצילומים אופס. אפשר להעלות שוב את כל הצילומים.");
+    toast("זיכרון הצילומים אופס", s);
+  };
+  $("resetAllBtn").onclick = () => { $("resetConfirm").hidden = false; $("resetConfirm").scrollIntoView({ block: "center" }); };
+  $("resetNo").onclick = () => { $("resetConfirm").hidden = true; };
+  $("resetBackupFirst").onclick = () => $("exportBtn").click();
+  $("resetYes").onclick = () => {
+    const s = snapshot();
+    items = []; shots = []; run.hashes.clear(); lastAdded = new Set();
+    [...$("rvList").children].forEach(c => dropCard(c, true));
+    $("resetConfirm").hidden = true; save();
+    setStatus("הכול נמחק. אפשר להתחיל להעלות תווים מחדש.");
+    window.scrollTo(0, 0);
+    toast("הרשימה אופסה", s, 12000);
+  };
 
   // ---------- backup ----------
   $("exportBtn").onclick = () => {
