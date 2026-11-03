@@ -1,4 +1,4 @@
-const SHELL = "vouchers-shell-v3";
+const SHELL = "vouchers-shell-v4";
 const RUNTIME = "vouchers-runtime-v1";
 const INBOX = "share-inbox";
 const SHELL_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
