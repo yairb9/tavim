@@ -6,13 +6,13 @@
 <meta name="theme-color" content="#f5f5f4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#161615" media="(prefers-color-scheme: dark)">
 <title>התווים שלי</title>
+<script>try{var t=localStorage.getItem("victory-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Hebrew:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
 :root{
@@ -20,18 +20,24 @@
   --text:#141414; --muted:#666663; --faint:#8f8f8b;
   --accent:#c2410c; --accent-ink:#ffffff; --accent-soft:#fbeee6;
   --danger:#b42318;
-  --focus:#c2410c;
+  --focus:#c2410c; --toast-accent:#ffb488;
   --r-lg:16px; --r-md:12px; --r-sm:10px;
   color-scheme:light; box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){
-  :root{
+  :root:not([data-theme="light"]){
     --bg:#161615; --surface:#1f1f1e; --sunken:#272726; --line:#2f2f2d; --line-strong:#3d3d3a;
     --text:#f4f4f2; --muted:#a3a39e; --faint:#7d7d78;
     --accent:#ff8f57; --accent-ink:#1a0b03; --accent-soft:#3a2418;
-    --danger:#ff7a6e; --focus:#ff8f57; color-scheme:dark;
+    --danger:#ff7a6e; --focus:#ff8f57; color-scheme:dark; --toast-accent:#b23c06;
   }
+}
+:root[data-theme="dark"]{
+    --bg:#161615; --surface:#1f1f1e; --sunken:#272726; --line:#2f2f2d; --line-strong:#3d3d3a;
+    --text:#f4f4f2; --muted:#a3a39e; --faint:#7d7d78;
+    --accent:#ff8f57; --accent-ink:#1a0b03; --accent-soft:#3a2418;
+    --danger:#ff7a6e; --focus:#ff8f57; color-scheme:dark; --toast-accent:#b23c06;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -151,7 +157,10 @@ dialog{border:0;padding:0;background:transparent;max-width:100vw;max-height:100d
 dialog::backdrop{background:rgba(0,0,0,.4)}
 .sheet{position:fixed;inset:auto 0 0 0;margin:0 auto;width:100%;max-width:540px}
 .sheet-body{background:var(--surface);border-radius:20px 20px 0 0;padding:8px 20px calc(20px + env(safe-area-inset-bottom,0px));max-height:88dvh;overflow-y:auto}
-.grab{width:36px;height:4px;border-radius:2px;background:var(--line-strong);margin:0 auto 18px}
+.grab-zone{margin:-8px -20px 6px;padding:10px 0 12px;touch-action:none;cursor:grab}
+.grab{width:36px;height:5px;border-radius:3px;background:var(--line-strong);margin:0 auto}
+.sheet h2,.sheet .sub{touch-action:none}
+.sheet-body{will-change:transform}
 .sheet h2{margin:0 0 4px;font-size:19px;font-weight:600}
 .sheet .sub{margin:0 0 18px;font-size:14px;color:var(--muted)}
 .sheet-actions{display:flex;gap:10px;margin-top:20px}
@@ -170,7 +179,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .settings-group{border-top:1px solid var(--line);padding:16px 0}
 .settings-group h3{margin:0 0 2px;font-size:15px;font-weight:600}
 .settings-group p{margin:0 0 12px;font-size:14px;color:var(--muted)}
-.settings-group .row{display:flex;gap:10px;flex-wrap:wrap;padding:0}
+.settings-group .srow{display:flex;gap:10px;flex-wrap:wrap;padding:0}
 
 .alert{margin:auto;width:min(88vw,360px)}
 .alert-body{background:var(--surface);border-radius:18px;padding:24px 20px 16px}
@@ -204,14 +213,16 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .seg button[aria-pressed="true"]{background:var(--text);color:var(--surface)}
 .bc{background:#fff;border:1px solid var(--line);border-radius:var(--r-md);padding:12px;max-width:100%;overflow-x:auto}
 .bc svg{display:block;max-width:100%;height:auto}
-#rQr svg{width:min(56vw,220px);height:auto}
+.codeview{width:100%}
+#rBarBox{width:100%;padding:16px 8px}
+#rBarBox svg{width:100%;height:auto;max-height:34vh}
+.fmt{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
 .rbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .rbtns .wide{grid-column:1/-1}
 
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 88px);background:var(--text);color:var(--surface);border-radius:var(--r-md);padding:10px 8px 10px 16px;display:none;align-items:center;gap:12px;z-index:30;font-size:14px;max-width:calc(100vw - 40px)}
 .toast.show{display:flex}
-.toast button{border:0;background:transparent;color:var(--accent);font-weight:600;padding:4px 8px}
-@media (prefers-color-scheme:light){.toast button{color:#ffb488}}
+.toast button{border:0;background:transparent;color:var(--toast-accent);font-weight:600;padding:4px 8px}
 .reader.open ~ .toast{bottom:calc(env(safe-area-inset-bottom,0px) + 150px)}
 </style>
 </head>
@@ -233,7 +244,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 <div class="wrap">
   <header class="appbar">
     <h1>התווים שלי</h1>
-    <button class="icon-btn" id="setBtn" type="button" aria-label="גיבוי והגדרות"><svg><use href="#i-gear"/></svg></button>
+    <button class="icon-btn" id="setBtn" type="button" aria-label="הגדרות"><svg><use href="#i-gear"/></svg></button>
   </header>
 
   <section class="summary" aria-live="polite">
@@ -276,7 +287,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 <!-- add vouchers -->
 <dialog class="sheet" id="addSheet" aria-labelledby="addTitle">
   <div class="sheet-body">
-    <div class="grab"></div>
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
     <input type="file" id="file" accept="image/*" multiple>
     <h2 id="addTitle">הוספת תווים</h2>
     <p class="sub">אפשר גם לשתף צילום מסך מהגלריה ישירות לאפליקציה ״תווים״.</p>
@@ -302,7 +313,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 <!-- actions for one voucher -->
 <dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">
   <div class="sheet-body">
-    <div class="grab"></div>
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
     <h2 id="moreTitle"></h2>
     <p class="sub" id="moreSub" dir="ltr" style="text-align:right"></p>
     <div class="menu" id="moreMenu"></div>
@@ -312,7 +323,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 <!-- partial use -->
 <dialog class="sheet" id="partSheet" aria-labelledby="partTitle">
   <div class="sheet-body">
-    <div class="grab"></div>
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
     <h2 id="partTitle">מימוש חלקי</h2>
     <p class="sub" id="partSub"></p>
     <label class="fld">כמה מימשת? (₪)<input id="partAmt" class="num" inputmode="decimal" placeholder="למשל 20"></label>
@@ -327,7 +338,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 <!-- edit -->
 <dialog class="sheet" id="editSheet" aria-labelledby="editTitle">
   <div class="sheet-body">
-    <div class="grab"></div>
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
     <h2 id="editTitle">עריכת פרטים</h2>
     <p class="sub" id="editSub" dir="ltr" style="text-align:right"></p>
     <div class="form">
@@ -345,13 +356,22 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 <!-- settings -->
 <dialog class="sheet" id="setSheet" aria-labelledby="setTitle">
   <div class="sheet-body">
-    <div class="grab"></div>
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
     <input type="file" id="importFile" accept="application/json,.json">
-    <h2 id="setTitle">גיבוי והגדרות</h2>
+    <h2 id="setTitle">הגדרות</h2>
+    <div class="settings-group">
+      <h3>מראה</h3>
+      <p>מצב כהה נוח בערב ובתאורה חלשה.</p>
+      <div class="seg" id="themeSeg" role="group" aria-label="מראה">
+        <button type="button" data-theme-opt="auto">לפי הטלפון</button>
+        <button type="button" data-theme-opt="light">בהיר</button>
+        <button type="button" data-theme-opt="dark">כהה</button>
+      </div>
+    </div>
     <div class="settings-group">
       <h3>גיבוי</h3>
       <p>הרשימה שמורה רק בטלפון הזה. קובץ גיבוי מאפשר לשחזר אותה או להעביר אותה לטלפון אחר.</p>
-      <div class="row">
+      <div class="srow">
         <button class="btn small quiet" id="exportBtn" type="button">שמירת קובץ גיבוי</button>
         <label class="btn small quiet" for="importFile">טעינת קובץ גיבוי</label>
       </div>
@@ -359,12 +379,12 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <div class="settings-group">
       <h3>קריאה מחדש של צילומים</h3>
       <p>מאפשר להעלות שוב צילומים שכבר נקראו, בלי לגעת ברשימה. תווים קיימים יקבלו פרטים שחסרים להם.</p>
-      <div class="row"><button class="btn small quiet" id="resetShotsBtn" type="button">איפוס זיכרון הצילומים</button></div>
+      <div class="srow"><button class="btn small quiet" id="resetShotsBtn" type="button">איפוס זיכרון הצילומים</button></div>
     </div>
     <div class="settings-group">
       <h3>איפוס מלא</h3>
       <p>מוחק את כל התווים, כולל הממומשים והפח, ואת זיכרון הצילומים.</p>
-      <div class="row"><button class="btn small del" id="resetAllBtn" type="button">מחיקת הכול</button></div>
+      <div class="srow"><button class="btn small del" id="resetAllBtn" type="button">מחיקת הכול</button></div>
     </div>
     <div class="sheet-actions"><button class="btn quiet" data-close type="button">סגירה</button></div>
   </div>
@@ -391,12 +411,11 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <div class="groups" id="rGroups"></div>
     <div class="rmeta" id="rMeta"></div>
     <div class="codeview">
-      <div class="seg" role="group" aria-label="סוג קוד">
-        <button type="button" data-mode="qr">QR</button>
-        <button type="button" data-mode="bar">ברקוד</button>
+      <div class="bc" id="rBarBox"><svg id="rBar" role="img" aria-label="ברקוד"></svg></div>
+      <div class="fmt">
+        <span>אם הקופה לא קוראת, נסו סוג אחר:</span>
+        <div class="seg" id="barFmt" role="group" aria-label="סוג ברקוד"></div>
       </div>
-      <div class="bc" id="rQr"></div>
-      <div class="bc" id="rBarBox"><svg id="rBar"></svg></div>
     </div>
   </div>
   <div class="rbtns">
@@ -827,13 +846,81 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
       $("dlgCancel").onclick = () => done(false);
       dlg.oncancel = e => { e.preventDefault(); done(false); };
       dlg.onclick = e => { if(e.target === dlg) done(false); };
-      dlg.showModal();
+      showDialog(dlg);
       (cancel ? $("dlgCancel") : $("dlgOk")).focus();
     });
   }
   const tell = o => ask(Object.assign({ cancel: null, ok: "סגירה", kind: "ok", icon: "✓" }, o));
 
-  function openSheet(d){ d.showModal(); }
+  // Android back button: while any window or the till screen is open, one history
+  // entry is kept; pressing back closes the top window instead of leaving the app.
+  let armed = !!(history.state && history.state.tavim), pendingBack = false;
+  const anyOpen = () => $("reader").classList.contains("open") || !!document.querySelector("dialog[open]");
+  function arm(){ if(pendingBack || armed) return; history.pushState({ tavim: 1 }, ""); armed = true; }
+  function maybeDisarm(){
+    setTimeout(() => { if(!anyOpen() && armed && !pendingBack){ armed = false; pendingBack = true; history.back(); } }, 0);
+  }
+  function closeTop(){
+    const open = [...document.querySelectorAll("dialog[open]")];
+    const top = open.sort((a, b) => (b._openedAt || 0) - (a._openedAt || 0))[0];
+    if(top){ if(top === dlg) ($("dlgCancel").hidden ? $("dlgOk") : $("dlgCancel")).click(); else top.close(); return; }
+    if($("reader").classList.contains("open")) closeReader();
+  }
+  window.addEventListener("popstate", () => {
+    if(pendingBack){ pendingBack = false; if(anyOpen()) arm(); return; }
+    armed = false;
+    closeTop();
+    if(anyOpen()) arm();
+  });
+  function showDialog(d){ d._openedAt = performance.now(); d.showModal(); arm(); }
+  document.querySelectorAll("dialog").forEach(d => d.addEventListener("close", maybeDisarm));
+  if(armed) maybeDisarm();
+
+  function openSheet(d){ showDialog(d); }
+
+  // swipe a sheet down by its handle or title to close it
+  document.querySelectorAll("dialog.sheet").forEach(d => {
+    const body = d.querySelector(".sheet-body");
+    let y0 = null, dy = 0, t0 = 0, pid = null;
+    body.addEventListener("pointerdown", e => {
+      if(e.button > 0 || !e.target.closest(".grab-zone, h2, .sub")) return;
+      y0 = e.clientY; dy = 0; t0 = performance.now(); pid = e.pointerId;
+      body.setPointerCapture(pid); body.style.transition = "none";
+    });
+    body.addEventListener("pointermove", e => {
+      if(y0 === null || e.pointerId !== pid) return;
+      dy = Math.max(0, e.clientY - y0); body.style.transform = dy ? `translateY(${dy}px)` : "";
+    });
+    const end = () => {
+      if(y0 === null) return;
+      const speed = dy / Math.max(1, performance.now() - t0);
+      y0 = null; body.style.transition = "transform .2s ease-out";
+      if(dy > body.offsetHeight * 0.25 || (dy > 40 && speed > 0.5)){
+        body.style.transform = "translateY(100%)";
+        setTimeout(() => { d.close(); body.style.transition = "none"; body.style.transform = ""; }, 190);
+      } else body.style.transform = "";
+    };
+    body.addEventListener("pointerup", end);
+    body.addEventListener("pointercancel", end);
+  });
+
+  // appearance
+  const THEME_KEY = "victory-theme";
+  function applyTheme(t){
+    const root = document.documentElement;
+    if(t === "light" || t === "dark") root.setAttribute("data-theme", t); else root.removeAttribute("data-theme");
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+      if(!m.dataset.orig) m.dataset.orig = m.content;
+      m.content = t === "light" ? "#f5f5f4" : t === "dark" ? "#161615" : m.dataset.orig;
+    });
+    document.querySelectorAll("#themeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeOpt === (t || "auto"))));
+  }
+  document.querySelectorAll("#themeSeg button").forEach(b => b.onclick = () => {
+    const t = b.dataset.themeOpt === "auto" ? null : b.dataset.themeOpt;
+    try { if(t) localStorage.setItem(THEME_KEY, t); else localStorage.removeItem(THEME_KEY); } catch(e){}
+    applyTheme(t);
+  });
+  applyTheme(localStorage.getItem(THEME_KEY));
   document.querySelectorAll("dialog.sheet").forEach(d => {
     d.addEventListener("click", e => { if(e.target === d || e.target.closest("[data-close]")) d.close(); });
   });
@@ -1089,25 +1176,35 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   };
 
   // ---------- at the till ----------
-  let curId = null, codeMode = localStorage.getItem(LS_MODE) || "qr", wakeLock = null;
-  function drawCode(v){
-    const qrBox = $("rQr"), barBox = $("rBarBox"), bar = $("rBar");
-    let qrOk = false, barOk = false;
-    try{ if(window.qrcode){ const q = qrcode(0, "M"); q.addData(v.code); q.make(); qrBox.innerHTML = q.createSvgTag(8, 4); qrOk = true; } }catch(e){}
-    try{ if(window.JsBarcode){ const ean = ean13ok(v.code);
-      JsBarcode(bar, ean ? v.code.slice(0,12) : v.code, { format: ean ? "EAN13" : "CODE128", lineColor:"#000", background:"#fff", height:80, width:2.2, fontSize:16, margin:6, displayValue:true }); barOk = true; } }catch(e){}
-    let mode = codeMode;
-    if(mode === "qr" && !qrOk) mode = "bar";
-    if(mode === "bar" && !barOk) mode = "qr";
-    qrBox.hidden = !(mode === "qr" && qrOk);
-    barBox.hidden = !(mode === "bar" && barOk);
-    document.querySelector(".seg").hidden = !(qrOk && barOk);
-    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  let curId = null, wakeLock = null;
+  // Barcode types. Code 128 is what most shop scanners read; Code 39 and EAN-13 are fallbacks.
+  const FMT_KEY = "victory-barfmt";
+  let barFmt = localStorage.getItem(FMT_KEY) || "CODE128";
+  function fmtsFor(v){
+    const f = [["CODE128", "Code 128"], ["CODE39", "Code 39"]];
+    if(ean13ok(v.code)) f.push(["EAN13", "EAN-13"]);
+    return f;
   }
-  document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
-    codeMode = b.dataset.mode; try { localStorage.setItem(LS_MODE, codeMode); } catch(e){}
-    const v = items.find(x => x.id === curId); if(v) drawCode(v);
-  });
+  function drawCode(v){
+    const bar = $("rBar"), list = fmtsFor(v);
+    let fmt = list.some(f => f[0] === barFmt) ? barFmt : "CODE128";
+    let ok = false;
+    try{
+      if(window.JsBarcode){
+        const value = fmt === "EAN13" ? v.code.slice(0, 12) : v.code;
+        // wide bars and a quiet zone of more than 10 bar widths on each side, which scanners need
+        JsBarcode(bar, value, { format: fmt, lineColor: "#000", background: "#fff", width: 3, height: 130, margin: 36, fontSize: 22, textMargin: 6, font: "monospace", displayValue: true });
+        ok = true;
+      }
+    }catch(e){}
+    $("rBarBox").hidden = !ok;
+    const seg = $("barFmt"); seg.innerHTML = "";
+    list.forEach(([id, label]) => {
+      const b = el("button", null, label); b.type = "button"; b.setAttribute("aria-pressed", String(id === fmt));
+      b.onclick = () => { barFmt = id; try { localStorage.setItem(FMT_KEY, id); } catch(e){} drawCode(v); };
+      seg.append(b);
+    });
+  }
   function openReader(id){
     const act = active(); const v = act.find(x => x.id === id); if(!v){ closeReader(); return; }
     curId = id;
@@ -1129,10 +1226,12 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     drawCode(v);
     $("rNext").hidden = act.length < 2;
     $("rPartBtn").classList.toggle("wide", act.length < 2);
+    const wasOpen = $("reader").classList.contains("open");
     $("reader").classList.add("open"); $("rClose").focus();
+    if(!wasOpen) arm();
     if(!wakeLock && navigator.wakeLock) navigator.wakeLock.request("screen").then(l => { wakeLock = l; }).catch(() => {});
   }
-  function closeReader(){ $("reader").classList.remove("open"); curId = null; if(wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; } }
+  function closeReader(){ $("reader").classList.remove("open"); curId = null; if(wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; } maybeDisarm(); }
   function nextAfter(id){ const act = active(); const i = act.findIndex(x => x.id === id); return act.length ? act[(i+1) % act.length] : null; }
   $("rClose").onclick = closeReader;
   $("rNext").onclick = () => { const n = nextAfter(curId); if(n) openReader(n.id); };
