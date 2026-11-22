@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Hebrew:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
 :root{
@@ -107,6 +108,30 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px;pointer-events
 .row{transition:background-color 1.2s ease-out}
 .row.new{background:var(--accent-soft)}
 
+.row{flex-wrap:wrap}
+.row .check{flex:none;display:grid;place-items:center;width:22px;height:22px;margin-inline-start:12px;border:1.5px solid var(--line-strong);border-radius:6px;background:var(--surface)}
+.row .check svg{width:14px;height:14px;color:var(--accent-ink);opacity:0}
+.row.sel .check{background:var(--accent);border-color:var(--accent)}
+.row.sel .check svg{opacity:1}
+.row-tag{color:var(--text);font-weight:500}
+.row-acts{flex-basis:100%;display:flex;gap:8px;padding:0 16px 14px 16px;margin-top:-6px}
+.row-acts .btn{min-height:36px;font-size:14px;padding:0 14px}
+.listbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-4px 0 12px;font-size:14px;color:var(--muted)}
+.listbar .btn{min-height:36px;padding:0 4px;font-size:14px}
+.selhead{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:8px 0 12px;margin-bottom:16px}
+.selhead b{font-size:15px;font-weight:600}
+.bottombar .pair{display:flex;gap:10px;max-width:500px;margin:0 auto}
+.bottombar .pair .btn{flex:1}
+.bottombar .pair .primary{flex:2}
+.pick{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pick button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:var(--r-md);border:1px solid var(--line-strong);background:var(--surface);text-align:start}
+.pick button b{font-weight:600;font-size:15px}
+.pick button span{font-size:12px;color:var(--muted)}
+.pick button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.pick button:disabled{opacity:.45}
+.progress-note{display:flex;align-items:center;gap:12px;padding:18px 0;color:var(--muted)}
+.spinner{width:20px;height:20px;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .empty{padding:48px 12px;text-align:center;color:var(--muted)}
 .empty b{display:block;color:var(--text);font-size:17px;font-weight:600;margin-bottom:4px}
 .empty p{margin:0 auto;max-width:30ch;font-size:15px}
@@ -238,13 +263,18 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   <symbol id="i-part" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9h9"/></g></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></g></symbol>
+  <symbol id="i-tick" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
 <div class="wrap">
   <header class="appbar">
     <h1>התווים שלי</h1>
-    <button class="icon-btn" id="setBtn" type="button" aria-label="הגדרות"><svg><use href="#i-gear"/></svg></button>
+    <span>
+      <button class="icon-btn" id="pdfBtn" type="button" aria-label="ייצוא ל-PDF"><svg><use href="#i-doc"/></svg></button>
+      <button class="icon-btn" id="setBtn" type="button" aria-label="הגדרות"><svg><use href="#i-gear"/></svg></button>
+    </span>
   </header>
 
   <section class="summary" aria-live="polite">
@@ -273,15 +303,28 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 
   <div class="tabs" role="tablist" aria-label="סינון תווים">
     <button role="tab" type="button" data-tab="active" aria-selected="true">פעילים<span class="n" id="nActive"></span></button>
+    <button role="tab" type="button" data-tab="pdf" aria-selected="false">יוצאו<span class="n" id="nPdf"></span></button>
     <button role="tab" type="button" data-tab="used" aria-selected="false">מומשו<span class="n" id="nUsed"></span></button>
     <button role="tab" type="button" data-tab="trash" aria-selected="false">פח<span class="n" id="nTrash"></span></button>
   </div>
 
+  <div class="selhead" id="selHead" hidden>
+    <b id="selCount"></b>
+    <button class="btn text" id="selAll" type="button"></button>
+  </div>
+  <div class="listbar" id="pdfBar" hidden>
+    <span id="pdfBarTxt"></span>
+    <button class="btn text" id="pdfClearAll" type="button">ביטול הסימון לכולם</button>
+  </div>
   <ul class="list" id="list"></ul>
 </div>
 
 <div class="bottombar">
   <button class="btn primary" id="addBtn" type="button"><svg><use href="#i-plus"/></svg>הוספת תווים</button>
+  <div class="pair" id="selBtns" hidden>
+    <button class="btn primary" id="selGo" type="button">המשך</button>
+    <button class="btn quiet" id="selCancel" type="button">ביטול</button>
+  </div>
 </div>
 
 <!-- add vouchers -->
@@ -349,6 +392,32 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <div class="sheet-actions">
       <button class="btn primary" id="eSave" type="button">שמירת השינויים</button>
       <button class="btn quiet" data-close type="button">ביטול</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- export to PDF -->
+<dialog class="sheet" id="pdfSheet" aria-labelledby="pdfTitle">
+  <div class="sheet-body">
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
+    <h2 id="pdfTitle">ייצוא ל-PDF</h2>
+    <p class="sub" id="pdfSub"></p>
+    <div id="pdfOpts">
+      <p class="fld" style="margin:0 0 8px">סוג הקוד בקובץ</p>
+      <div class="pick" id="pdfFmt"></div>
+      <p class="status" id="pdfHint" style="margin-top:10px"></p>
+      <div class="sheet-actions">
+        <button class="btn primary" id="pdfMake" type="button">יצירת PDF</button>
+        <button class="btn quiet" data-close type="button">ביטול</button>
+      </div>
+    </div>
+    <div id="pdfWork" hidden><div class="progress-note"><span class="spinner" aria-hidden="true"></span><span id="pdfWorkTxt">יוצר את הקובץ…</span></div></div>
+    <div id="pdfDone" hidden>
+      <div class="sheet-actions">
+        <button class="btn primary" id="pdfShare" type="button">שיתוף</button>
+        <button class="btn quiet" id="pdfSave" type="button">שמירה בטלפון</button>
+      </div>
+      <div class="sheet-actions" style="margin-top:10px"><button class="btn quiet" data-close type="button">סגירה</button></div>
     </div>
   </div>
 </dialog>
@@ -855,7 +924,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   // Android back button: while any window or the till screen is open, one history
   // entry is kept; pressing back closes the top window instead of leaving the app.
   let armed = !!(history.state && history.state.tavim), pendingBack = false;
-  const anyOpen = () => $("reader").classList.contains("open") || !!document.querySelector("dialog[open]");
+  const anyOpen = () => selecting || $("reader").classList.contains("open") || !!document.querySelector("dialog[open]");
   function arm(){ if(pendingBack || armed) return; history.pushState({ tavim: 1 }, ""); armed = true; }
   function maybeDisarm(){
     setTimeout(() => { if(!anyOpen() && armed && !pendingBack){ armed = false; pendingBack = true; history.back(); } }, 0);
@@ -864,7 +933,8 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     const open = [...document.querySelectorAll("dialog[open]")];
     const top = open.sort((a, b) => (b._openedAt || 0) - (a._openedAt || 0))[0];
     if(top){ if(top === dlg) ($("dlgCancel").hidden ? $("dlgOk") : $("dlgCancel")).click(); else top.close(); return; }
-    if($("reader").classList.contains("open")) closeReader();
+    if($("reader").classList.contains("open")){ closeReader(); return; }
+    if(selecting) exitSelect();
   }
   window.addEventListener("popstate", () => {
     if(pendingBack){ pendingBack = false; if(anyOpen()) arm(); return; }
@@ -967,19 +1037,27 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; lastAdded = new Set(); render(); });
 
   function row(v, kind){
-    const li = el("li", "item row" + (kind === "active" ? "" : " done") + (lastAdded.has(v.code) ? " new" : ""));
+    const live = kind === "active" || kind === "pdf";
+    const li = el("li", "item row" + (live ? "" : " done") + (lastAdded.has(v.code) ? " new" : "") + (selecting && selected.has(v.id) ? " sel" : ""));
     const main = el("button", "row-main"); main.type = "button";
-    if(kind === "active"){ main.onclick = () => openReader(v.id); main.setAttribute("aria-label", `הצגה בקופה, התו ${v.code}`); }
+    if(selecting){
+      const box = el("span", "check"); box.innerHTML = '<svg aria-hidden="true"><use href="#i-tick"/></svg>'; li.append(box);
+      main.setAttribute("role", "checkbox"); main.setAttribute("aria-checked", String(selected.has(v.id)));
+      main.setAttribute("aria-label", `בחירת התו ${v.code}`);
+      main.onclick = () => { selected.has(v.id) ? selected.delete(v.id) : selected.add(v.id); render(); };
+    } else if(live){ main.onclick = () => openReader(v.id); main.setAttribute("aria-label", `הצגה בקופה, התו ${v.code}`); }
     else main.disabled = true;
     const code = el("span", "row-code"); group(v.code).forEach(g => code.append(el("span", null, g)));
     const amt = el("span", "row-amt");
-    const bal = kind === "active" ? balOf(v) : (v.loadAmount ?? v.balance);
+    const bal = live ? balOf(v) : (v.loadAmount ?? v.balance);
     if(bal != null){
       amt.append(el("b", null, money(bal)));
-      if(kind === "active" && v.loadAmount != null && v.loadAmount !== bal) amt.append(el("small", null, "מתוך " + money(v.loadAmount)));
+      if(live && v.loadAmount != null && v.loadAmount !== bal) amt.append(el("small", null, "מתוך " + money(v.loadAmount)));
     } else amt.append(el("span", "none", "ללא יתרה"));
     const meta = el("span", "row-meta");
-    if(kind === "active"){
+    if(kind === "pdf" && v.exportedAt) meta.append(el("span", "row-tag", "יוצא ב-" + fmtDate(v.exportedAt)));
+    if(live){
+      if(kind === "active" && v.exportedAt) meta.append(el("span", "row-tag", "יוצא"));
       if(v.loaded) meta.append(el("span", null, "הוטען ב-" + isoToHe(v.loaded)));
       const n = daysLeft(expiryOf(v));
       if(n !== null && n <= 30) meta.append(el("span", "alert-txt", n < 0 ? "פג תוקף" : n === 0 ? "פג היום" : n === 1 ? "פג מחר" : `פג בעוד ${n} ימים`));
@@ -988,7 +1066,13 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     if(kind === "trash" && v.deletedAt) meta.append(el("span", null, "נמחק ב-" + fmtDate(v.deletedAt)));
     main.append(code, amt);
     if(meta.childNodes.length) main.append(meta);
-    li.append(main, iconBtn("i-more", "פעולות לתו " + v.code, () => openMore(v, kind)));
+    li.append(main);
+    if(!selecting) li.append(iconBtn("i-more", "פעולות לתו " + v.code, () => openMore(v, kind)));
+    if(kind === "pdf" && !selecting){
+      const acts = el("div", "row-acts");
+      acts.append(mkBtn("השתמשתי", "primary", () => doUsed(v)), mkBtn("לא השתמשתי", "quiet", () => doUnexport(v)));
+      li.append(acts);
+    }
     return li;
   }
   function emptyState(){
@@ -996,7 +1080,8 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     if(tab === "active"){
       li.append(el("b", null, "עוד אין תווים"), el("p", null, "שתפו צילום מסך של תו מאפליקציית מולטיפס, או הוסיפו אותו כאן."));
       li.append(mkBtn("הוספת תווים", "quiet", openAdd));
-    } else if(tab === "used") li.append(el("b", null, "אין תווים שמומשו"), el("p", null, "תו שמסמנים כמומש עובר לכאן."));
+    } else if(tab === "pdf") li.append(el("b", null, "אין תווים שיוצאו"), el("p", null, "תווים שמייצאים לקובץ PDF מופיעים כאן, כדי שאפשר יהיה לסמן אחר כך אם השתמשתם בהם."));
+    else if(tab === "used") li.append(el("b", null, "אין תווים שמומשו"), el("p", null, "תו שמסמנים כמומש עובר לכאן."));
     else li.append(el("b", null, "הפח ריק"), el("p", null, "תו שמוחקים עובר לכאן, ואפשר לשחזר אותו."));
     return li;
   }
@@ -1010,10 +1095,24 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     const soon = act.filter(v => { const n = daysLeft(expiryOf(v)); return n !== null && n <= 30; }).length;
     $("sumWarn").hidden = !soon;
     $("sumWarn").textContent = soon === 1 ? "תו אחד פג בחודש הקרוב" : `${soon} תווים פגים בחודש הקרוב`;
-    $("nActive").textContent = act.length || ""; $("nUsed").textContent = used.length || ""; $("nTrash").textContent = trash.length || "";
+    const inPdf = act.filter(v => v.exportedAt).sort((a,b) => (b.exportedAt||0) - (a.exportedAt||0));
+    $("nActive").textContent = act.length || ""; $("nPdf").textContent = inPdf.length || ""; $("nUsed").textContent = used.length || ""; $("nTrash").textContent = trash.length || "";
+    if(selecting && tab !== "active") tab = "active";
+    document.querySelector(".tabs").hidden = selecting;
+    $("selHead").hidden = !selecting; $("selBtns").hidden = !selecting; $("addBtn").hidden = selecting;
+    if(selecting){
+      [...selected].forEach(id => { if(!act.some(v => v.id === id)) selected.delete(id); });
+      const sum = act.filter(v => selected.has(v.id)).reduce((s, v) => s + (balOf(v) || 0), 0);
+      $("selCount").textContent = selected.size ? `נבחרו ${selected.size}${sum ? ", בסך " + money(sum) : ""}` : "בחרו תווים לייצוא";
+      $("selAll").textContent = selected.size === act.length ? "ניקוי הבחירה" : "בחירת הכול";
+      $("selGo").textContent = selected.size ? `המשך (${selected.size})` : "המשך";
+      $("selGo").disabled = !selected.size;
+    }
+    $("pdfBar").hidden = tab !== "pdf" || !inPdf.length || selecting;
+    if(tab === "pdf"){ const t = inPdf.reduce((s, v) => s + (balOf(v) || 0), 0); $("pdfBarTxt").textContent = `${inPdf.length === 1 ? "תו אחד" : inPdf.length + " תווים"}${t ? ", בסך " + money(t) : ""}`; }
     document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
     const list = $("list"); list.innerHTML = "";
-    const rows = tab === "active" ? act : tab === "used" ? used : trash;
+    const rows = tab === "active" ? act : tab === "pdf" ? inPdf : tab === "used" ? used : trash;
     if(!rows.length) list.append(emptyState());
     rows.forEach(v => list.append(row(v, tab)));
     // newly added or changed vouchers are tinted briefly, then settle
@@ -1055,6 +1154,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   let moreId = null;
   const MENU = {
     active: [["show", "i-qr", "הצגה בקופה"], ["used", "i-check", "סימון כמומש"], ["part", "i-part", "מימוש חלקי"], ["edit", "i-edit", "עריכת פרטים"], ["trash", "i-trash", "מחיקה", true]],
+    pdf:    [["show", "i-qr", "הצגה בקופה"], ["used", "i-check", "השתמשתי (סימון כמומש)"], ["unexport", "i-undo", "לא השתמשתי (ביטול הסימון)"], ["part", "i-part", "מימוש חלקי"], ["edit", "i-edit", "עריכת פרטים"], ["trash", "i-trash", "מחיקה", true]],
     used:   [["unuse", "i-undo", "החזרה לפעילים"], ["trash", "i-trash", "מחיקה", true]],
     trash:  [["restore", "i-undo", "שחזור"], ["purge", "i-trash", "מחיקה לצמיתות", true]]
   };
@@ -1069,7 +1169,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
       b.onclick = () => {
         const it = items.find(x => x.id === moreId); $("moreSheet").close(); if(!it) return;
         ({ show: () => openReader(it.id), used: () => doUsed(it), part: () => openPartial(it), edit: () => openEdit(it),
-           trash: () => doTrash(it), unuse: () => doUnuse(it), restore: () => doRestore(it), purge: () => doPurge(it) })[act]();
+           trash: () => doTrash(it), unuse: () => doUnuse(it), unexport: () => doUnexport(it), restore: () => doRestore(it), purge: () => doPurge(it) })[act]();
       };
       m.append(b);
     });
@@ -1173,6 +1273,169 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     [...$("rvList").children].forEach(c => dropCard(c, true));
     tab = "active"; save(); setStatus(""); window.scrollTo(0, 0);
     toast("כל התווים נמחקו", s, 12000);
+  };
+
+  // ---------- PDF: choose vouchers, export, then mark them used or not ----------
+  let selecting = false;
+  const selected = new Set();
+  function enterSelect(){
+    if(!active().length) return tell({ title: "אין תווים פעילים לייצוא", text: "אפשר לייצא רק תווים שעוד לא מומשו.", kind: "", icon: "i" });
+    selecting = true; selected.clear(); tab = "active"; lastAdded = new Set(); render(); arm(); window.scrollTo(0, 0);
+  }
+  function exitSelect(){ selecting = false; selected.clear(); render(); maybeDisarm(); }
+  $("pdfBtn").onclick = () => selecting ? exitSelect() : enterSelect();
+  $("selCancel").onclick = exitSelect;
+  $("selAll").onclick = () => { const act = active(); if(selected.size === act.length) selected.clear(); else act.forEach(v => selected.add(v.id)); render(); };
+  $("selGo").onclick = () => openPdfSheet();
+
+  async function doUnexport(v){
+    if(!await ask({ title: `לבטל את סימון הייצוא של התו ${vName(v)}?`, text: `מספר ${codeTxt(v)}. התו נשאר פעיל, ורק יוצא מהלשונית ״יוצאו״.`, ok: "ביטול הסימון" })) return;
+    const s = snapshot(); delete v.exportedAt; delete v.exportFmt; lastAdded = new Set(); save(); toast("סימון הייצוא בוטל", s);
+  }
+  $("pdfClearAll").onclick = async () => {
+    const list = active().filter(v => v.exportedAt);
+    if(!await ask({ title: `לבטל את סימון הייצוא של ${list.length === 1 ? "תו אחד" : list.length + " תווים"}?`, text: "התווים נשארים פעילים, ורק יוצאים מהלשונית ״יוצאו״.", ok: "ביטול הסימון" })) return;
+    const s = snapshot(); list.forEach(v => { delete v.exportedAt; delete v.exportFmt; }); save(); toast("הסימון בוטל", s);
+  };
+
+  const PDF_FMTS = [
+    ["CODE128", "Code 128", "ברקוד רגיל, הנפוץ בקופות"],
+    ["CODE39", "Code 39", "ברקוד רחב, נקרא כמעט בכל סורק"],
+    ["QR", "QR", "קוד ריבועי, לסורקים מבוססי מצלמה"],
+    ["EAN13", "EAN-13", "ברקוד מוצרים, רק למספרים מתאימים"]
+  ];
+  let pdfFmt = localStorage.getItem("victory-pdffmt") || "CODE128", pdfBlob = null, pdfName = "";
+  function pdfChosen(){ return active().filter(v => selected.has(v.id)); }
+  function openPdfSheet(){
+    const list = pdfChosen(); if(!list.length) return;
+    const sum = list.reduce((s, v) => s + (balOf(v) || 0), 0);
+    $("pdfTitle").textContent = "ייצוא ל-PDF";
+    $("pdfSub").textContent = `${list.length === 1 ? "תו אחד" : list.length + " תווים"}${sum ? ", בסך " + money(sum) : ""}. לכל תו יופיעו קוד, המספר, היתרה ותאריך ההטענה.`;
+    const eanOk = list.every(v => ean13ok(v.code));
+    if(pdfFmt === "EAN13" && !eanOk) pdfFmt = "CODE128";
+    const box = $("pdfFmt"); box.innerHTML = "";
+    PDF_FMTS.forEach(([id, label, desc]) => {
+      const b = el("button"); b.type = "button"; b.append(el("b", null, label), el("span", null, desc));
+      b.setAttribute("aria-pressed", String(id === pdfFmt));
+      if(id === "EAN13" && !eanOk) b.disabled = true;
+      b.onclick = () => { pdfFmt = id; try { localStorage.setItem("victory-pdffmt", id); } catch(e){} box.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); };
+      box.append(b);
+    });
+    $("pdfHint").textContent = eanOk ? "" : "EAN-13 לא זמין, כי לפחות אחד המספרים שנבחרו לא מתאים לו.";
+    $("pdfOpts").hidden = false; $("pdfWork").hidden = true; $("pdfDone").hidden = true;
+    openSheet($("pdfSheet"));
+  }
+
+  function loadScript(src){
+    return new Promise((res, rej) => { const t = document.createElement("script"); t.src = src; t.onload = res; t.onerror = rej; document.head.append(t); });
+  }
+  const FONT = '"IBM Plex Sans Hebrew", "Rubik", Arial, sans-serif';
+  function codeCanvas(v, fmt, maxW, maxH){
+    if(fmt === "QR"){
+      const q = qrcode(0, "M"); q.addData(v.code); q.make();
+      const n = q.getModuleCount(), quiet = 4, sc = Math.max(3, Math.floor(Math.min(maxW, maxH || 300) / (n + quiet * 2)));   // whole pixels per square, drawn without resizing
+      const c = document.createElement("canvas"); c.width = c.height = (n + quiet * 2) * sc;
+      const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.fillStyle = "#000";
+      for(let r = 0; r < n; r++) for(let k = 0; k < n; k++) if(q.isDark(r, k)) x.fillRect((k + quiet) * sc, (r + quiet) * sc, sc, sc);
+      return c;
+    }
+    const value = fmt === "EAN13" ? v.code.slice(0, 12) : v.code;
+    const probe = document.createElement("canvas");
+    JsBarcode(probe, value, { format: fmt, width: 1, height: 10, margin: 10, displayValue: false });
+    const mod = Math.max(2, Math.min(5, Math.floor(maxW / probe.width)));   // whole pixels per bar, so bars stay sharp
+    const c = document.createElement("canvas");
+    JsBarcode(c, value, { format: fmt, width: mod, height: 150, margin: 10 * mod, displayValue: false, background: "#fff", lineColor: "#000" });
+    return c;
+  }
+  async function buildPdf(list, fmt){
+    if(!window.jspdf) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    try { await Promise.all(["400", "500", "600"].map(w => document.fonts.load(`${w} 30px "IBM Plex Sans Hebrew"`))); } catch(e){}
+    const W = 1654, H = 2339, M = 96, GAP = 32, HEAD = 120, COLS = 2, ROWS = 4, PER = COLS * ROWS;
+    const cw = (W - 2 * M - GAP * (COLS - 1)) / COLS, ch = (H - 2 * M - HEAD - GAP * (ROWS - 1)) / ROWS;
+    const pages = Math.ceil(list.length / PER), made = new Date();
+    const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4", compress: true });
+    for(let pIdx = 0; pIdx < pages; pIdx++){
+      $("pdfWorkTxt").textContent = pages > 1 ? `יוצר עמוד ${pIdx + 1} מתוך ${pages}…` : "יוצר את הקובץ…";
+      await new Promise(r => setTimeout(r, 0));
+      const c = document.createElement("canvas"); c.width = W; c.height = H;
+      const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+      // page header
+      x.direction = "rtl"; x.textAlign = "right"; x.fillStyle = "#141414"; x.font = `600 40px ${FONT}`;
+      x.fillText("התווים שלי", W - M, M + 40);
+      x.font = `400 26px ${FONT}`; x.fillStyle = "#666663";
+      x.fillText(`נוצר ב-${fmtDate(made.getTime())}, ${list.length === 1 ? "תו אחד" : list.length + " תווים"}`, W - M, M + 84);
+      x.textAlign = "left"; x.direction = "rtl";
+      x.fillText(`עמוד ${pIdx + 1} מתוך ${pages}`, M, M + 40);
+      x.fillStyle = "#e4e4e2"; x.fillRect(M, M + HEAD - 14, W - 2 * M, 2);
+      list.slice(pIdx * PER, pIdx * PER + PER).forEach((v, i) => {
+        const col = i % COLS, rowN = Math.floor(i / COLS);
+        const cx = W - M - (col + 1) * cw - col * GAP;          // first card on the right, as in Hebrew
+        const cy = M + HEAD + rowN * (ch + GAP);
+        x.strokeStyle = "#d4d4d1"; x.lineWidth = 2;
+        x.beginPath(); x.roundRect(cx, cy, cw, ch, 22); x.stroke();
+        const pad = 30, n = pIdx * PER + i + 1;
+        // top line: balance on the right, number in the list on the left
+        x.direction = "rtl"; x.textAlign = "right"; x.fillStyle = "#141414"; x.font = `600 42px ${FONT}`;
+        const bal = balOf(v); x.fillText(bal != null ? money(bal) : "ללא יתרה", cx + cw - pad, cy + 62);
+        if(bal != null && v.loadAmount != null && v.loadAmount !== bal){
+          x.font = `400 24px ${FONT}`; x.fillStyle = "#666663"; x.fillText("מתוך " + money(v.loadAmount), cx + cw - pad, cy + 96);
+        }
+        x.textAlign = "left"; x.font = `500 26px ${FONT}`; x.fillStyle = "#8f8f8b"; x.direction = "ltr";
+        x.fillText("#" + n, cx + pad, cy + 56);
+        // the code itself
+        const top = cy + 104, room = ch - 104 - 172;
+        const img = codeCanvas(v, fmt, cw - 2 * pad, room);
+        let iw = img.width, ih = img.height;
+        if(ih > room){ const k = room / ih; iw *= k; ih *= k; }
+        if(iw > cw - 2 * pad){ const k = (cw - 2 * pad) / iw; iw *= k; ih *= k; }
+        x.imageSmoothingEnabled = false;
+        x.drawImage(img, cx + (cw - iw) / 2, top + (room - ih) / 2, iw, ih);
+        // number and date, for recognising the voucher
+        x.direction = "ltr"; x.textAlign = "center"; x.fillStyle = "#141414"; x.font = `600 38px ${FONT}`;
+        x.fillText(group(v.code).join("  "), cx + cw / 2, cy + ch - 116);
+        x.direction = "rtl"; x.font = `400 24px ${FONT}`; x.fillStyle = "#666663";
+        const parts = [];
+        if(v.loaded) parts.push("הוטען ב-" + isoToHe(v.loaded));
+        if(v.loaded) parts.push("בתוקף עד " + isoToHe(plusYears(v.loaded, 5)));
+        x.fillText(parts.join(", "), cx + cw / 2, cy + ch - 76);
+        // a box to tick by hand
+        x.strokeStyle = "#8f8f8b"; x.lineWidth = 2; x.strokeRect(cx + pad, cy + ch - 50, 26, 26);
+        x.direction = "rtl"; x.textAlign = "right"; x.fillStyle = "#8f8f8b"; x.font = `400 22px ${FONT}`;
+        x.fillText("מומש", cx + pad + 92, cy + ch - 29);
+      });
+      if(pIdx) doc.addPage();
+      doc.addImage(c.toDataURL("image/png"), "PNG", 0, 0, 210, 297, undefined, "FAST");
+    }
+    return doc.output("blob");
+  }
+  $("pdfMake").onclick = async () => {
+    const list = pdfChosen(); if(!list.length) return;
+    $("pdfOpts").hidden = true; $("pdfWork").hidden = false;
+    try{
+      pdfBlob = await buildPdf(list, pdfFmt);
+    }catch(e){
+      $("pdfSheet").close();
+      return tell({ title: "לא הצלחתי ליצור את הקובץ", text: "ייתכן שאין חיבור לאינטרנט בפעם הראשונה שיוצרים PDF. נסו שוב בעוד רגע.", kind: "danger", icon: "!" });
+    }
+    pdfName = `tavim-${todayIso()}.pdf`;
+    const s = snapshot(), now = Date.now();
+    list.forEach(v => { v.exportedAt = now; v.exportFmt = pdfFmt; });
+    selecting = false; selected.clear(); tab = "pdf"; lastAdded = new Set(list.map(v => v.code)); save();
+    $("pdfTitle").textContent = "ה-PDF מוכן";
+    $("pdfSub").textContent = `${list.length === 1 ? "התו סומן" : list.length + " התווים סומנו"} בלשונית ״יוצאו״. אחרי השימוש, סמנו שם לכל תו אם השתמשתם בו.`;
+    const file = new File([pdfBlob], pdfName, { type: "application/pdf" });
+    $("pdfShare").hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+    $("pdfWork").hidden = true; $("pdfDone").hidden = false;
+    toast(list.length === 1 ? "התו סומן כ״יוצא״" : `${list.length} תווים סומנו כ״יוצאו״`, s);
+  };
+  $("pdfShare").onclick = async () => {
+    try { await navigator.share({ files: [new File([pdfBlob], pdfName, { type: "application/pdf" })], title: "התווים שלי" }); } catch(e){}
+  };
+  $("pdfSave").onclick = () => {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(pdfBlob); a.download = pdfName;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("הקובץ נשמר בהורדות", null);
   };
 
   // ---------- at the till ----------
