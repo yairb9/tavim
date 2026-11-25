@@ -10,17 +10,37 @@
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
   const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`; };
   const plusYears = (iso, n) => { const [y,m,d] = iso.split("-"); return `${+y + n}-${m}-${d}`; };
-  const expiryOf = v => v.loaded ? plusYears(v.loaded, 5) : (v.expiry || null);
+  // One entry per supermarket chain. Everything that differs between chains is decided here:
+  // how long the number is, how it is split for reading aloud, how long the voucher is valid,
+  // and whether its barcode type is fixed. Adding a chain means adding an entry.
+  const CHAINS = {
+    victory:   { name: "ויקטורי", len: 13, groups: [3, 3, 3, 4], years: 5, family: "multipass" },
+    ramilevy:  { name: "רמי לוי", len: 13, groups: [3, 3, 3, 4], years: 5, family: "multipass" },
+    shufersal: { name: "שופרסל", len: 20, groups: [4, 4, 4, 4, 4], years: null, family: "tenbis", barcode: "CODE128" }
+  };
+  const CHAIN_IDS = Object.keys(CHAINS);
+  const chainKey = v => CHAINS[v && v.chain] ? v.chain : "victory";
+  const chainOf = v => CHAINS[chainKey(v)];
+  const validCode = (code, chain) => new RegExp("^\\d{" + (CHAINS[chain] || CHAINS.victory).len + "}$").test(code);
+  // a chain that fits a number of this length; `prefer` wins when it fits
+  const chainForLen = (n, prefer) => (CHAINS[prefer] && CHAINS[prefer].len === n) ? prefer : (CHAIN_IDS.find(k => CHAINS[k].len === n) || null);
+  const LS_CHAIN = "victory-lastchain";
+  const lastChain = () => { const c = localStorage.getItem(LS_CHAIN); return CHAINS[c] ? c : "victory"; };
+  const expiryOf = v => (v.loaded && chainOf(v).years) ? plusYears(v.loaded, chainOf(v).years) : (v.expiry || null);
   // earlier versions saved the date they found as an expiry date; a date in the past is really the load date
   // Anything read from storage or from a backup file is rebuilt field by field,
   // so a damaged or tampered file can only ever produce plain, well-formed vouchers.
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   function cleanItem(v){
-    if(!v || typeof v !== "object" || !/^\d{13}$/.test(String(v.code || ""))) return null;
+    if(!v || typeof v !== "object") return null;
+    const rawCode = String(v.code || "");
+    // vouchers saved before chains existed are Victory; a chain that does not fit the number's length is corrected
+    const chain = /^\d+$/.test(rawCode) ? chainForLen(rawCode.length, CHAINS[v.chain] ? v.chain : "victory") : null;
+    if(!chain) return null;
     const num = x => (typeof x === "number" && isFinite(x) && x >= 0 && x <= 100000) ? Math.round(x * 100) / 100 : null;
     const ts = x => (typeof x === "number" && isFinite(x) && x > 0) ? x : undefined;
     const iso = x => (typeof x === "string" && ISO.test(x)) ? x : null;
-    const o = { id: /^[a-z0-9]{1,40}$/i.test(String(v.id || "")) ? String(v.id) : uid(), code: String(v.code) };
+    const o = { id: /^[a-z0-9]{1,40}$/i.test(String(v.id || "")) ? String(v.id) : uid(), code: rawCode, chain };
     if("amount" in v && !("balance" in v)) o.amount = num(v.amount);
     else { o.balance = num(v.balance); o.loadAmount = num(v.loadAmount); }
     o.loaded = iso(v.loaded); if(iso(v.expiry)) o.expiry = v.expiry;
@@ -47,7 +67,15 @@
   items.forEach(migrate);
   const balOf = v => v.balance ?? v.loadAmount ?? null;
 
-  const group = c => [c.slice(0,3), c.slice(3,6), c.slice(6,9), c.slice(9)];
+  // splits a number into the groups it is read aloud in: 3-3-3-4 for 13 digits, 4-4-4-4-4 for 20
+  function group(c){
+    c = String(c);
+    const sizes = (Object.values(CHAINS).find(x => x.len === c.length) || { groups: [] }).groups;
+    const out = []; let i = 0;
+    for(const n of sizes){ out.push(c.slice(i, i + n)); i += n; }
+    for(; i < c.length; i += 4) out.push(c.slice(i, i + 4));
+    return out.filter(Boolean);
+  }
   const money = n => "₪" + (Math.round(n*100)/100).toLocaleString("he-IL");
   const fmtDate = t => { const d = new Date(t); return d.getDate() + "/" + (d.getMonth()+1) + "/" + d.getFullYear(); };
   function ean13ok(c){ let s=0; for(let i=0;i<12;i++) s += (+c[i])*(i%2?3:1); return (10 - s%10)%10 === +c[12]; }
@@ -92,7 +120,8 @@
     let added = 0, dup = 0, dupUsed = 0, dupTrash = 0, restored = 0, updated = 0; const addedItems = []; lastAdded = new Set();
     for(const v of list){
       const code = String(v.code || "").replace(/\D/g, "");
-      if(code.length !== 13) continue;
+      const chain = chainForLen(code.length, v.chain);
+      if(!chain) continue;
       const ex = items.find(x => x.code === code);
       const pos = x => (typeof x === "number" && x > 0) ? Math.round(x*100)/100 : null;
       const balance = pos(v.balance) ?? pos(v.loadAmount), loadAmount = pos(v.loadAmount) ?? pos(v.balance);
@@ -102,6 +131,7 @@
           // read again after deleting: bring it back from the trash with the new details
           ex.deleted = false; delete ex.deletedAt; ex.used = false; delete ex.usedAt;
           if(balance != null) ex.balance = balance; if(loadAmount != null) ex.loadAmount = loadAmount; if(loaded){ ex.loaded = loaded; delete ex.expiry; } if(v.shot) ex.shot = v.shot;
+          if(v.chain) ex.chain = chain;
           restored++; lastAdded.add(code); continue;
         }
         let changed = false;
@@ -109,12 +139,14 @@
         // a newer screenshot shows a lower balance after a partial use; balances only go down
         if(balance != null && (ex.balance == null || balance < ex.balance)){ ex.balance = balance; changed = true; }
         if(!ex.loaded && loaded){ ex.loaded = loaded; delete ex.expiry; changed = true; }
+        if(v.chain && chain !== chainKey(ex)){ ex.chain = chain; changed = true; }   // the chain was corrected by hand
         if(v.shot && !ex.shot) ex.shot = v.shot;
         if(changed) updated++;
         if(ex.used) dupUsed++; else { dup++; lastAdded.add(code); }
         continue;
       }
-      const item = { id: uid(), code, balance, loadAmount, loaded, shot: v.shot || null, used: false, added: Date.now() };
+      const item = { id: uid(), code, chain, balance, loadAmount, loaded, shot: v.shot || null, used: false, added: Date.now() };
+      try { localStorage.setItem(LS_CHAIN, chain); } catch(e){}
       items.unshift(item); addedItems.push(item);
       lastAdded.add(code); added++;
     }
@@ -183,6 +215,9 @@
   const DATE = /(?<!\d)(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?!\d)/g;
   const DATE_YMD = /(?<!\d)(20\d{2})[\/.\-](\d{1,2})[\/.\-](\d{1,2})(?!\d)/g;   // 2026-10-25, as Multipass shows it
 
+  const CODE_LENS = new Set(Object.values(CHAINS).map(c => c.len)), MAX_LEN = Math.max(...CODE_LENS);
+  const AMT_DECIMAL = /(?<![\d.,])(\d{1,4}[.,]\d{2})(?![\d.,])/g;   // "50.00": two decimals mean money
+
   function extract(text){
     const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
     const codes = [], amounts = [], dates = [];
@@ -205,11 +240,12 @@
         line.split(/[^\d\s\-–]+/).forEach(chunk => {
           const g = chunk.match(/\d+/g) || [];
           let hit = false;
+          // neighbouring groups of digits that add up to exactly the length of a known voucher number
           for(let i = 0; i < g.length; i++){
             let s = "";
-            for(let j = i; j < g.length && s.length < 13; j++){ s += g[j]; if(s.length === 13){ codes.push({ li, code: s, ok: true }); hit = true; } }
+            for(let j = i; j < g.length && s.length < MAX_LEN; j++){ s += g[j]; if(CODE_LENS.has(s.length)){ codes.push({ li, code: s, ok: true }); hit = true; } }
           }
-          if(!hit){ const all = g.join(""); if(all.length >= 11 && all.length <= 15) codes.push({ li, code: all, ok: false }); }
+          if(!hit){ const all = g.join(""); if([...CODE_LENS].some(n => Math.abs(all.length - n) <= 2)) codes.push({ li, code: all, ok: false }); }
         });
       }
       // amounts (ignore long digit runs, which belong to codes)
@@ -228,6 +264,8 @@
         re.lastIndex = 0;
         while((m = re.exec(amtLine))) addAmt(m[1], kind);
       }
+      AMT_DECIMAL.lastIndex = 0;
+      while((m = AMT_DECIMAL.exec(amtLine))) addAmt(m[1], "decimal");
       // "סכום הטענה: ₪50" comes out as "50 :garble", with the number first
       const colon = amtLine.match(/^\W{0,2}[A-Za-z]{0,2}(\d{1,4}(?:[.,]\d{1,2})?)\s*:/);
       if(colon) addAmt(colon[1], "colon");
@@ -237,7 +275,10 @@
     });
 
     const byCode = new Map();
-    codes.forEach(c => { if(!byCode.has(c.code)) byCode.set(c.code, c); });
+    // a shorter number found inside a longer one is part of it, not a voucher of its own
+    const longest = codes.filter(c => c.ok && c.code.length === MAX_LEN);
+    codes.filter(c => !longest.some(L => L !== c && L.code.length > c.code.length && L.code.includes(c.code)))
+         .forEach(c => { if(!byCode.has(c.code)) byCode.set(c.code, c); });
     const list = [...byCode.values()].filter(c => c.ok || ![...byCode.values()].some(f => f.ok && (f.code.includes(c.code) || c.code.includes(f.code))));
     const single = list.filter(c => c.ok).length <= 1;
     const nearest = (arr, li, rank) => {
@@ -248,7 +289,12 @@
     const today = todayIso();
     const out = list.map(c => {
       let balance = null, loadAmount = null, loaded = null;
-      if(single){
+      const sure = x => (x.kind === "real" || x.kind === "decimal" || x.kind === "letter") ? 0 : 1;
+      if(c.code.length >= 17){
+        // a voucher for one fixed sum (Shufersal): the clearest amount on the page; no load date
+        const a = amounts.slice().sort((x, y) => (sure(x) - sure(y)) || (Math.abs(x.li - c.li) - Math.abs(y.li - c.li)))[0];
+        balance = loadAmount = a ? a.val : null;
+      } else if(single){
         // one voucher: the clearest amount, and the load date, which is the earliest date (and not in the future)
         const all = dates.map(d => d.iso).sort();
         const past = all.filter(d => d <= today);
@@ -271,7 +317,9 @@
       }
       return { code: c.code, ok: c.ok, li: c.li, balance, loadAmount, loaded };
     });
-    return { found: out.filter(c => c.ok), near: out.filter(c => !c.ok) };
+    const found = out.filter(c => c.ok);
+    // near-misses are only worth showing when no proper number was found; otherwise they are stray digits from the text
+    return { found, near: found.length ? [] : out.filter(c => !c.ok) };
   }
 
 
@@ -314,6 +362,53 @@
     return res;
   }
 
+  // Which chain a Multipass voucher belongs to is told by the colour of the logo on it:
+  // Victory's is orange, Rami Levy's is green. (The reader cannot read the Hebrew name.)
+  async function logoChain(file){
+    try{
+      const bmp = await createImageBitmap(file);
+      const c = document.createElement("canvas"); c.width = 320; c.height = Math.max(1, Math.round(bmp.height * 320 / bmp.width));
+      const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(bmp, 0, 0, c.width, c.height);
+      const d = x.getImageData(0, 0, c.width, c.height).data;
+      let orange = 0, green = 0;
+      for(let i = 0; i < d.length; i += 4){
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        if(r > 200 && g > 70 && g < 150 && b < 80) orange++;
+        else if(g > 110 && r < 90 && b < 110 && g - r > 60) green++;
+      }
+      if(orange >= 40 && orange > green * 4) return "victory";
+      if(green >= 40 && green > orange * 4) return "ramilevy";
+    }catch(e){}
+    return null;
+  }
+  // Where the phone can read barcodes itself, the barcode in the screenshot is used to check the number.
+  async function barcodesIn(file){
+    if(!("BarcodeDetector" in window)) return [];
+    try{
+      const det = new BarcodeDetector({ formats: ["code_128"] });
+      const found = await det.detect(await createImageBitmap(file));
+      return found.map(b => String(b.rawValue || "").replace(/\D/g, "")).filter(v => CODE_LENS.has(v.length));
+    }catch(e){ return []; }
+  }
+  async function tagChains(res, file){
+    const all = () => res.found.concat(res.near);
+    const needsLogo = all().some(c => c.code.length !== CHAINS.shufersal.len);
+    const logo = needsLogo ? await logoChain(file) : null;
+    const multi = CHAINS[lastChain()].family === "multipass" ? lastChain() : "victory";
+    for(const bc of await barcodesIn(file)){
+      const same = all().find(c => c.code === bc);
+      if(same){ same.verified = true; continue; }
+      const close = all().find(c => !c.verified && Math.abs(c.code.length - bc.length) <= 2);
+      if(close){ close.code = bc; close.verified = true; close.conf = null; if(!close.ok){ close.ok = true; res.near = res.near.filter(x => x !== close); res.found.push(close); } }
+      else res.found.push({ code: bc, ok: true, verified: true, balance: null, loadAmount: null, loaded: null });
+    }
+    all().forEach(c => {
+      c.chain = chainForLen(c.code.length, logo || multi) || (logo || multi);
+      c.chainSure = c.code.length === CHAINS.shufersal.len || !!logo;
+    });
+    return res;
+  }
+
   // queue of screenshots to read; new ones can join while reading
   const run = { queue: [], total: 0, done: 0, busy: false, stopped: false, same: 0, hashes: new Set() };
   function updateBulk(){
@@ -343,7 +438,7 @@
         const w = await getWorker();
         const canvas = await prepare(job.file);
         const { data } = await w.recognize(canvas);
-        res = analyse(data, canvas);
+        res = await tagChains(analyse(data, canvas), job.file);
       }catch(e){
         failed = true;
         if(e && e.message === "no-ocr"){ setStatus("רכיב הקריאה לא נטען. בדוק חיבור לאינטרנט ונסה שוב, או הקלד ידנית.", true); run.stopped = true; }
@@ -377,7 +472,7 @@
     img.onclick = () => openShot(card);
     const note = document.createElement("p"); note.className = "rv-note";
     note.textContent = failed ? "לא הצלחתי לקרוא את הצילום. אפשר להקליד את המספר כאן." :
-      res.found.length ? "" : res.near.length ? "מצאתי מספר, אבל לא בדיוק 13 ספרות. תקן אותו לפי הצילום." : "לא מצאתי מספר של 13 ספרות. אפשר להקליד אותו כאן, או להסיר את הצילום.";
+      res.found.length ? "" : res.near.length ? "מצאתי מספר, אבל מספר הספרות שלו לא מתאים לתו. תקנו אותו לפי הצילום." : "לא מצאתי מספר תו בצילום. אפשר להקליד אותו כאן, או להסיר את הצילום.";
     const rows = document.createElement("div");
     const addRow = (obj, checked) => {
       obj = obj || {};
@@ -386,24 +481,28 @@
       if(obj.crop){ const im = document.createElement("img"); im.className = "crop"; im.src = obj.crop; im.alt = "המספר כפי שהוא מופיע בצילום"; wrap.append(im); }
       if(obj.conf && obj.conf.some(c => c < LOW_CONF)){
         const ro = document.createElement("p"); ro.className = "readout"; ro.setAttribute("aria-hidden", "true");
-        [...val].forEach((d, i) => { const sp = document.createElement("span"); sp.textContent = d; if(obj.conf[i] < LOW_CONF) sp.className = "low"; if(i === 3 || i === 6 || i === 9) sp.classList.add("gap"); ro.append(sp); });
+        const starts = new Set(); group(val).reduce((at, g) => { starts.add(at); return at + g.length; }, 0);
+        [...val].forEach((d, i) => { const sp = document.createElement("span"); sp.textContent = d; if(obj.conf[i] < LOW_CONF) sp.className = "low"; if(i && starts.has(i)) sp.classList.add("gap"); ro.append(sp); });
         const n = obj.conf.filter(c => c < LOW_CONF).length;
         const note = document.createElement("p"); note.className = "read-note warn";
         note.textContent = n === 1 ? "ספרה אחת נקראה בביטחון נמוך (מסומנת). בדקו אותה מול הצילום." : `${n} ספרות נקראו בביטחון נמוך (מסומנות). בדקו אותן מול הצילום.`;
         wrap.append(ro, note);
-      } else if(obj.conf){
-        const note = document.createElement("p"); note.className = "read-note"; note.textContent = "כל הספרות נקראו בביטחון גבוה.";
+      } else if(obj.verified || obj.conf){
+        const note = document.createElement("p"); note.className = "read-note";
+        note.textContent = obj.verified ? "המספר אומת מול הברקוד שבצילום." : "כל הספרות נקראו בביטחון גבוה.";
         wrap.append(note);
       }
       const row = document.createElement("div"); row.className = "cand";
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.setAttribute("aria-label", "להוסיף את המספר הזה");
-      const inp = document.createElement("input"); inp.className = "num"; inp.inputMode = "numeric"; inp.value = val; inp.placeholder = "13 ספרות"; inp.setAttribute("aria-label", "מספר התו");
+      const inp = document.createElement("input"); inp.className = "num"; inp.inputMode = "numeric"; inp.value = val; inp.setAttribute("aria-label", "מספר התו");
       const fl = document.createElement("span"); fl.className = "flag";
-      const upd = () => { const n = inp.value.replace(/\D/g, "").length; fl.textContent = (n === 13 || n === 0) ? "" : n + " ספרות"; if(n === 13) cb.checked = true; };
-      inp.oninput = upd; upd();
       row.append(cb, inp, fl);
+      // the chain: guessed from the screenshot, one tap to change
+      wrap.dataset.chain = CHAINS[obj.chain] ? obj.chain : (chainForLen(val.length, lastChain()) || lastChain());
+      const pick = chainPicker(() => wrap.dataset.chain, c => { wrap.dataset.chain = c; upd(); });
+      if(obj.code && obj.chainSure === false) pick.hint.textContent = "לא זיהיתי את הרשת בוודאות. בדקו שהיא נכונה.";
       const ex = document.createElement("div"); ex.className = "cand-extra";
-      const la = document.createElement("label"); la.textContent = "יתרה ₪";
+      const la = document.createElement("label"); const laTxt = document.createTextNode("יתרה ₪"); la.append(laTxt);
       const amt = document.createElement("input"); amt.className = "amt"; amt.inputMode = "decimal"; amt.value = obj.balance ?? ""; amt.placeholder = "לא נמצא";
       la.appendChild(amt);
       const lb = document.createElement("label"); lb.textContent = "הוטען ₪";
@@ -413,10 +512,27 @@
       const dt = document.createElement("input"); dt.type = "date"; dt.className = "exp-in"; dt.value = obj.loaded || "";
       ld.appendChild(dt);
       const until = document.createElement("span");
-      const showUntil = () => { until.textContent = dt.value ? "בתוקף עד " + isoToHe(plusYears(dt.value, 5)) : ""; };
-      dt.onchange = showUntil; showUntil();
+      const showUntil = () => { const y = CHAINS[wrap.dataset.chain].years; until.textContent = (dt.value && y) ? "בתוקף עד " + isoToHe(plusYears(dt.value, y)) : ""; };
+      dt.onchange = showUntil;
+      // everything that depends on the chain: the length expected, and which details the voucher has
+      function upd(){
+        const n = inp.value.replace(/\D/g, "").length;
+        // a number of another chain's length switches the chain by itself
+        const fit = chainForLen(n, wrap.dataset.chain);
+        if(fit && fit !== wrap.dataset.chain) wrap.dataset.chain = fit;
+        const ch = CHAINS[wrap.dataset.chain];
+        inp.placeholder = ch.len + " ספרות"; inp.classList.toggle("long", n > 14);
+        fl.textContent = (n === ch.len || n === 0) ? "" : `${n} מתוך ${ch.len}`;
+        if(n === ch.len) cb.checked = true;
+        const fixedSum = ch.family !== "multipass";
+        laTxt.textContent = fixedSum ? "סכום ₪" : "יתרה ₪";
+        lb.hidden = fixedSum; ld.hidden = fixedSum; until.hidden = fixedSum;
+        la.classList.toggle("wide", fixedSum);
+        pick.refresh(); showUntil();
+      }
+      inp.oninput = upd; upd();
       ex.append(la, lb, ld, until);
-      wrap.append(row, ex); rows.appendChild(wrap);
+      wrap.append(row, pick.el, ex); rows.appendChild(wrap);
       return inp;
     };
     res.found.forEach(n => addRow(n, true));
@@ -439,15 +555,19 @@
     rows.forEach(r => {
       const code = r.querySelector(".num").value.replace(/\D/g, "");
       const item = el("div", "vr-item");
-      const c = el("div", "vr-code" + (code.length === 13 ? "" : " bad"));
-      (code.length === 13 ? group(code) : [code]).forEach(g => c.append(el("span", null, g)));
+      const ch = CHAINS[r.dataset.chain] || CHAINS.victory, okLen = code.length === ch.len;
+      const c = el("div", "vr-code" + (okLen ? "" : " bad") + (code.length > 13 ? " long" : ""));
+      (okLen ? group(code) : [code]).forEach(g => c.append(el("span", null, g)));
       const meta = el("div", "vr-meta");
       const pair = (label, val) => { const w = el("span", null, label + " "); w.append(el("b", null, val)); meta.append(w); };
-      if(code.length !== 13) pair("אורך", code.length + " ספרות במקום 13");
+      pair("רשת", ch.name);
+      if(!okLen) pair("אורך", `${code.length} ספרות במקום ${ch.len}`);
       const bal = r.querySelector(".amt").value.trim(), ld = r.querySelector(".amt2").value.trim(), dt = r.querySelector(".exp-in").value;
-      pair("יתרה", bal ? "₪" + bal : "לא נקראה");
-      pair("הוטען", ld ? "₪" + ld : "לא נקרא");
-      pair("תאריך הטענה", dt ? isoToHe(dt) : "לא נקרא");
+      if(ch.family === "multipass"){
+        pair("יתרה", bal ? "₪" + bal : "לא נקראה");
+        pair("הוטען", ld ? "₪" + ld : "לא נקרא");
+        pair("תאריך הטענה", dt ? isoToHe(dt) : "לא נקרא");
+      } else pair("סכום", bal ? "₪" + bal : "לא נקרא");
       item.append(c, meta); read.append(item);
     });
     showDialog($("shotView"));
@@ -487,10 +607,12 @@
       const codes = [...card.querySelectorAll(".cand-wrap")].filter(r => r.querySelector("input[type=checkbox]").checked)
         .map(r => {
           const num = el => { const n = parseFloat(el.value.replace(",", ".")); return isNaN(n) ? null : n; };
-          return { code: r.querySelector(".num").value.replace(/\D/g, ""), balance: num(r.querySelector(".amt")), loadAmount: num(r.querySelector(".amt2")), loaded: r.querySelector(".exp-in").value || null, shot: card._hash || null };
+          const chain = r.dataset.chain, multi = CHAINS[chain].family === "multipass";
+          return { code: r.querySelector(".num").value.replace(/\D/g, ""), chain, balance: num(r.querySelector(".amt")), loadAmount: multi ? num(r.querySelector(".amt2")) : null,
+                   loaded: multi ? (r.querySelector(".exp-in").value || null) : null, shot: card._hash || null };
         });
       if(!codes.length){ empty++; return; }
-      if(codes.some(c => c.code.length !== 13)){ bad++; card.classList.add("bad"); return; }
+      if(codes.some(c => !validCode(c.code, c.chain))){ bad++; card.classList.add("bad"); return; }
       card.classList.remove("bad");
       codes.forEach(c => toAdd.push(c));
       rememberShot(card._hash);
@@ -499,7 +621,7 @@
     const p = [];
     let r = null;
     if(toAdd.length) r = addCodes(toAdd);
-    if(bad) p.push(bad === 1 ? "בצילום אחד יש מספר מסומן שאין בו 13 ספרות (מסומן באדום)." : `ב-${bad} צילומים יש מספר מסומן שאין בו 13 ספרות (מסומנים באדום).`);
+    if(bad) p.push(bad === 1 ? "בצילום אחד יש מספר מסומן שמספר הספרות שלו לא מתאים לרשת (מסומן באדום)." : `ב-${bad} צילומים יש מספר מסומן שמספר הספרות שלו לא מתאים לרשת (מסומנים באדום).`);
     if(empty) p.push(empty === 1 ? "צילום אחד נשאר בלי מספר מסומן. סמן מספר או הסר אותו." : `${empty} צילומים נשארו בלי מספר מסומן. סמן מספר או הסר אותם.`);
     setStatus(p.join(" "), !!p.length);
     if(r) showAdded(r);
@@ -535,6 +657,21 @@
   function mkBtn(text, cls, fn){ const b = el("button", "btn small " + (cls || ""), text); b.type = "button"; b.onclick = fn; return b; }
   function iconBtn(icon, label, fn){ const b = el("button", "icon-btn"); b.type = "button"; b.setAttribute("aria-label", label); b.innerHTML = `<svg><use href="#${icon}"/></svg>`; b.onclick = fn; return b; }
   function moneyHtml(n){ const f = el("span"); f.append(el("span", "cur", "₪"), document.createTextNode((Math.round(n*100)/100).toLocaleString("he-IL"))); return f; }
+
+  // A row of chain names to choose from. Used wherever one voucher's chain is set by hand.
+  function chainPicker(get, set){
+    const box = el("div", "chain-pick");
+    const seg = el("div", "seg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "רשת");
+    const hint = el("p", "read-note");
+    CHAIN_IDS.forEach(id => {
+      const b = el("button", null, CHAINS[id].name); b.type = "button"; b.dataset.chain = id;
+      b.onclick = () => { hint.textContent = ""; set(id); refresh(); };
+      seg.append(b);
+    });
+    function refresh(){ seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.chain === get()))); hint.hidden = !hint.textContent; }
+    box.append(seg, hint); refresh();
+    return { el: box, hint, refresh };
+  }
 
   // ---------- dialogs ----------
   const dlg = $("dlg");
@@ -636,7 +773,11 @@
   // ---------- add ----------
   function showAdded(r){
     const others = resultText(Object.assign({}, r, { added: 0 }));
-    if(r.added){ tab = "active"; render(); }
+    if(r.added){
+      const cs = new Set(r.addedItems.map(chainKey));
+      if(chainFilter !== "all" && !(cs.size === 1 && cs.has(chainFilter))) setChainFilter(cs.size === 1 ? [...cs][0] : "all", true);
+      tab = "active"; render();
+    }
     if(r.added === 1){
       const it = r.addedItems[0];
       return tell({ title: "התו נוסף בהצלחה", text: [balOf(it) != null ? `התו על סך ${money(balOf(it))} נוסף לרשימה.` : "התו נוסף לרשימה.", others].filter(Boolean).join(" ") });
@@ -653,13 +794,31 @@
   function openAdd(){
     $("addChoose").hidden = false; $("addForm").hidden = true; $("mErr").textContent = "";
     $("mCode").value = ""; $("mAmt").value = ""; $("mExp").value = "";
+    mChain = chainFilter !== "all" ? chainFilter : lastChain();
+    mForm();
     openSheet($("addSheet"));
   }
+  // the manual form follows the chain: how many digits, and which details the voucher has
+  let mChain = "victory";
+  const mPick = chainPicker(() => mChain, c => { mChain = c; mForm(); });
+  $("mChainBox").append(mPick.el);
+  function mForm(){
+    const n = $("mCode").value.replace(/\D/g, "").length;
+    const fit = chainForLen(n, mChain); if(fit && fit !== mChain) mChain = fit;
+    const ch = CHAINS[mChain], multi = ch.family === "multipass";
+    $("mCode").placeholder = ch.len + " ספרות";
+    $("mAmtLbl").textContent = multi ? "יתרה (₪)" : "סכום (₪)";
+    $("mExp").closest("label").hidden = !multi;
+    $("mAmt").closest("label").classList.toggle("wide", !multi);
+    mPick.refresh();
+  }
+  $("mCode").addEventListener("input", mForm);
   $("addManual").onclick = () => { $("addChoose").hidden = true; $("addForm").hidden = false; $("mCode").focus(); };
   $("mAdd").onclick = () => {
     const code = $("mCode").value.replace(/\D/g, "");
-    if(code.length !== 13){ $("mErr").textContent = `מספר התו צריך להכיל 13 ספרות. כרגע יש ${code.length}.`; $("mCode").focus(); return; }
-    const r = addCodes([{ code, balance: parseMoney($("mAmt").value), loaded: $("mExp").value || null }]);
+    const ch = CHAINS[mChain];
+    if(!validCode(code, mChain)){ $("mErr").textContent = `מספר תו של ${ch.name} צריך להכיל ${ch.len} ספרות. כרגע יש ${code.length}.`; $("mCode").focus(); return; }
+    const r = addCodes([{ code, chain: mChain, balance: parseMoney($("mAmt").value), loaded: ch.family === "multipass" ? ($("mExp").value || null) : null }]);
     $("addSheet").close();
     showAdded(r);
   };
@@ -671,9 +830,37 @@
 
   // ---------- list ----------
   let tab = "active";
-  function active(){ return items.filter(v => !v.used && !v.deleted).sort((a,b) => (expiryOf(a)||"9999").localeCompare(expiryOf(b)||"9999") || b.added - a.added); }
+  // Which chain is on screen. "all" shows every chain; the choice is only offered when there is more than one.
+  const LS_FILTER = "victory-chainfilter";
+  let chainFilter = localStorage.getItem(LS_FILTER) || "all";
+  const chainsPresent = () => CHAIN_IDS.filter(id => items.some(v => !v.deleted && chainKey(v) === id));
+  const inScope = v => chainFilter === "all" || chainKey(v) === chainFilter;
+  function setChainFilter(c, quiet){
+    chainFilter = (c === "all" || CHAINS[c]) ? c : "all";
+    try { localStorage.setItem(LS_FILTER, chainFilter); } catch(e){}
+    if(!quiet){ lastAdded = new Set(); render(); }
+  }
+  const chainSum = id => items.filter(v => !v.used && !v.deleted && (id === "all" || chainKey(v) === id)).reduce((t, v) => t + (balOf(v) || 0), 0);
+  const chainCount = id => items.filter(v => !v.used && !v.deleted && (id === "all" || chainKey(v) === id)).length;
+  $("chainBtn").onclick = () => {
+    const box = $("chainList"); box.innerHTML = "";
+    ["all", ...chainsPresent()].forEach(id => {
+      const b = el("button"); b.type = "button"; if(id === chainFilter) b.setAttribute("aria-current", "true");
+      const n = chainCount(id);
+      const name = el("span", "cl-name", id === "all" ? "כל הרשתות" : CHAINS[id].name);
+      const sub = el("span", "cl-sub", n === 1 ? "תו פעיל אחד" : n + " תווים פעילים");
+      const left = el("span", "cl-left"); left.append(name, sub);
+      b.append(left, el("b", "cl-amt", money(chainSum(id))));
+      b.onclick = () => { $("chainSheet").close(); setChainFilter(id); };
+      box.append(b);
+    });
+    openSheet($("chainSheet"));
+  };
+
+  function active(){ return items.filter(v => !v.used && !v.deleted && inScope(v)).sort((a,b) => (expiryOf(a)||"9999").localeCompare(expiryOf(b)||"9999") || b.added - a.added); }
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; lastAdded = new Set(); render(); });
 
+  let showChain = false;   // rows name their chain only when several chains share the list
   function row(v, kind){
     const live = kind === "active" || kind === "pdf";
     const li = el("li", "item row" + (live ? "" : " done") + (lastAdded.has(v.code) ? " new" : "") + (selecting && selected.has(v.id) ? " sel" : ""));
@@ -685,7 +872,7 @@
       li.dataset.id = v.id;
     } else if(live){ main.onclick = () => openReader(v.id); main.setAttribute("aria-label", `הצגה בקופה, התו ${v.code}`); }
     else main.disabled = true;
-    const code = el("span", "row-code"); group(v.code).forEach(g => code.append(el("span", null, g)));
+    const code = el("span", "row-code" + (v.code.length > 13 ? " long" : "")); group(v.code).forEach(g => code.append(el("span", null, g)));
     const amt = el("span", "row-amt");
     const bal = live ? balOf(v) : (v.loadAmount ?? v.balance);
     if(bal != null){
@@ -693,6 +880,7 @@
       if(live && v.loadAmount != null && v.loadAmount !== bal) amt.append(el("small", null, "מתוך " + money(v.loadAmount)));
     } else amt.append(el("span", "none", "ללא יתרה"));
     const meta = el("span", "row-meta");
+    if(showChain) meta.append(el("span", "row-tag", chainOf(v).name));
     if(kind === "pdf" && v.exportedAt) meta.append(el("span", "row-tag", "יוצא ב-" + fmtDate(v.exportedAt)));
     if(live){
       if(kind === "active" && v.exportedAt) meta.append(el("span", "row-tag", "יוצא"));
@@ -724,9 +912,18 @@
     return li;
   }
   function render(){
+    const present = chainsPresent(), multi = present.length > 1;
+    if(chainFilter !== "all" && !(multi && present.includes(chainFilter))) chainFilter = "all";
+    // the title turns into the chain chooser only when there is something to choose
+    $("appTitle").hidden = multi; $("chainBtn").hidden = !multi;
+    $("chainBtnTxt").textContent = chainFilter === "all" ? "כל הרשתות" : CHAINS[chainFilter].name;
+    const split = multi && chainFilter === "all";
+    $("sumChains").hidden = !split;
+    if(split) $("sumChains").textContent = present.map(id => `${CHAINS[id].name} ${money(chainSum(id))}`).join(", ");
+    showChain = split;
     const act = active();
-    const used = items.filter(v => v.used && !v.deleted).sort((a,b) => (b.usedAt||0) - (a.usedAt||0));
-    const trash = items.filter(v => v.deleted).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
+    const used = items.filter(v => v.used && !v.deleted && inScope(v)).sort((a,b) => (b.usedAt||0) - (a.usedAt||0));
+    const trash = items.filter(v => v.deleted && inScope(v)).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
     const total = act.reduce((s,v) => s + (balOf(v)||0), 0);
     const sa = $("sumAmt"); sa.innerHTML = ""; sa.append(moneyHtml(total));
     $("sumSub").textContent = act.length ? (act.length === 1 ? "בתו פעיל אחד" : `ב-${act.length} תווים פעילים`) : "אין תווים פעילים";
@@ -850,22 +1047,37 @@
     editId = v.id;
     $("editSub").textContent = codeTxt(v);
     $("eBal").value = balOf(v) ?? ""; $("eLoad").value = v.loadAmount ?? ""; $("eDate").value = v.loaded || "";
+    eChain = chainKey(v);
+    const multi = chainOf(v).family === "multipass";
+    $("eLoad").closest("label").hidden = !multi; $("eDate").closest("label").hidden = !multi;
+    $("eBalLbl").textContent = multi ? "יתרה (₪)" : "סכום (₪)";
+    $("eBal").closest("label").classList.toggle("wide", !multi);
+    // the chain can be corrected among chains whose numbers have the same length
+    const same = CHAIN_IDS.filter(id => CHAINS[id].len === chainOf(v).len);
+    $("eChainBox").hidden = same.length < 2;
+    ePick.el.querySelectorAll("button").forEach(b => b.hidden = !same.includes(b.dataset.chain));
+    ePick.refresh();
     showUntil(); openSheet($("editSheet"));
   }
-  function showUntil(){ const d = $("eDate").value; $("eUntil").textContent = d ? "בתוקף עד " + isoToHe(plusYears(d, 5)) : ""; }
+  let eChain = "victory";
+  const ePick = chainPicker(() => eChain, c => { eChain = c; showUntil(); });
+  $("eChainBox").append(ePick.el);
+  function showUntil(){ const d = $("eDate").value, y = CHAINS[eChain].years; $("eUntil").textContent = (d && y) ? "בתוקף עד " + isoToHe(plusYears(d, y)) : ""; }
   $("eDate").oninput = showUntil;
   $("eSave").onclick = async () => {
     const v = items.find(x => x.id === editId); if(!v) return;
-    const nb = parseMoney($("eBal").value), nl = parseMoney($("eLoad").value), nd = $("eDate").value || null;
+    const multi = chainOf(v).family === "multipass";
+    const nb = parseMoney($("eBal").value), nl = multi ? parseMoney($("eLoad").value) : (v.loadAmount ?? null), nd = multi ? ($("eDate").value || null) : (v.loaded || null);
     const ch = [];
-    if(nb !== balOf(v)) ch.push(`יתרה: ${balOf(v) != null ? money(balOf(v)) : "ריק"} ← ${nb != null ? money(nb) : "ריק"}`);
+    if(eChain !== chainKey(v)) ch.push(`רשת: ${chainOf(v).name} ← ${CHAINS[eChain].name}`);
+    if(nb !== balOf(v)) ch.push(`${multi ? "יתרה" : "סכום"}: ${balOf(v) != null ? money(balOf(v)) : "ריק"} ← ${nb != null ? money(nb) : "ריק"}`);
     if(nl !== (v.loadAmount ?? null)) ch.push(`הוטען: ${v.loadAmount != null ? money(v.loadAmount) : "ריק"} ← ${nl != null ? money(nl) : "ריק"}`);
     if(nd !== (v.loaded || null)) ch.push(`תאריך הטענה: ${v.loaded ? isoToHe(v.loaded) : "ריק"} ← ${nd ? isoToHe(nd) : "ריק"}`);
     $("editSheet").close();
     if(!ch.length) return;
     if(!await ask({ title: "לשמור את השינויים?", text: ch.join(". ") + ".", ok: "שמירה" })) return;
     const s = snapshot();
-    v.balance = nb; v.balanceSetAt = Date.now(); v.loadAmount = nl; v.loaded = nd; delete v.expiry;
+    v.chain = eChain; v.balance = nb; v.balanceSetAt = Date.now(); v.loadAmount = nl; v.loaded = nd; delete v.expiry;
     lastAdded = new Set([v.code]); save(); toast("השינויים נשמרו", s);
   };
 
@@ -1010,8 +1222,12 @@
     const sum = list.reduce((s, v) => s + (balOf(v) || 0), 0);
     $("pdfTitle").textContent = "ייצוא ל-PDF";
     $("pdfSub").textContent = `${list.length === 1 ? "תו אחד" : list.length + " תווים"}${sum ? ", בסך " + money(sum) : ""}. לכל תו יופיעו קוד, המספר, היתרה ותאריך ההטענה.`;
-    const eanOk = list.every(v => ean13ok(v.code));
+    // vouchers whose chain fixes the barcode type (Shufersal) always keep it; the choice is for the rest
+    const free = list.filter(v => !chainOf(v).barcode), fixed = list.length - free.length;
+    pdfWide = fixed > 0;
+    const eanOk = free.length > 0 && free.every(v => ean13ok(v.code));
     if(pdfFmt === "EAN13" && !eanOk) pdfFmt = "CODE128";
+    $("pdfFmtLbl").hidden = !free.length; $("pdfFmt").hidden = !free.length;
     const box = $("pdfFmt"); box.innerHTML = "";
     PDF_FMTS.forEach(([id, label, desc]) => {
       const b = el("button"); b.type = "button"; b.append(el("b", null, label), el("span", null, desc));
@@ -1020,7 +1236,10 @@
       b.onclick = () => { pdfFmt = id; try { localStorage.setItem("victory-pdffmt", id); } catch(e){} box.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); drawColsPicker(true); };
       box.append(b);
     });
-    $("pdfHint").textContent = eanOk ? "" : "EAN-13 לא זמין, כי לפחות אחד המספרים שנבחרו לא מתאים לו.";
+    const hints = [];
+    if(free.length && !eanOk) hints.push("EAN-13 לא זמין, כי לפחות אחד המספרים שנבחרו לא מתאים לו.");
+    if(fixed) hints.push(free.length ? "תווי שופרסל מיוצאים תמיד ב-Code 128, כמו הברקוד המקורי שלהם." : "תווי שופרסל מיוצאים ב-Code 128, כמו הברקוד המקורי שלהם.");
+    $("pdfHint").textContent = hints.join(" ");
     drawColsPicker(true);
     $("pdfOpts").hidden = false; $("pdfWork").hidden = true; $("pdfDone").hidden = true;
     openSheet($("pdfSheet"));
@@ -1032,9 +1251,12 @@
   const PDF_LAYOUT = { 2: { rows: 4, k: 1, gap: 32 }, 3: { rows: 6, k: 0.68, gap: 26 }, 4: { rows: 8, k: 0.5, gap: 20 } };
   const PDF_COLS = { CODE128: { rec: 3 }, EAN13: { rec: 3 }, QR: { rec: 2 }, CODE39: { rec: 2 } };
   let pdfCols = 3;
+  let pdfWide = false;   // a 20-digit barcode is in the selection: too wide for 4 in a row
   function drawColsPicker(reset){
-    const rule = PDF_COLS[pdfFmt] || PDF_COLS.CODE128;
+    const onlyFixed = $("pdfFmt").hidden;
+    const rule = onlyFixed ? PDF_COLS.CODE128 : (PDF_COLS[pdfFmt] || PDF_COLS.CODE128);
     if(reset) pdfCols = rule.rec;
+    if(pdfWide && pdfCols === 4) pdfCols = 3;
     const box = $("pdfCols"); box.innerHTML = "";
     [2, 3, 4].forEach(n => {
       const per = n * PDF_LAYOUT[n].rows;
@@ -1042,6 +1264,7 @@
       b.append(el("b", null, `${n} בשורה`), el("span", null, `${per} בעמוד`));
       if(n === rule.rec) b.append(el("span", "rec", "מומלץ"));
       b.setAttribute("aria-pressed", String(n === pdfCols));
+      b.disabled = pdfWide && n === 4;
       b.onclick = () => { pdfCols = n; drawColsPicker(false); };
       box.append(b);
     });
@@ -1051,7 +1274,7 @@
       QR: "ההמלצה שלי: 2 בשורה. בבדיקות, קוד QR קטן לא תמיד נקרא, ולכן עדיף להשאיר אותו גדול.",
       CODE39: "ההמלצה שלי: 2 בשורה. Code 39 הוא ברקוד רחב, וביותר מ-2 בשורה הקווים שלו נעשים דקים ורגישים לאיכות ההדפסה."
     };
-    $("pdfColsHint").textContent = why[pdfFmt] || "";
+    $("pdfColsHint").textContent = (onlyFixed ? "ההמלצה שלי: 3 בשורה. הברקוד נקרא גם בהדפסה חלשה, ונכנסים 18 תווים בעמוד." : (why[pdfFmt] || "")) + (pdfWide ? " 4 בשורה לא זמין, כי הברקוד של שופרסל ארוך ולא נכנס ברוחב הזה." : "");
   }
 
   function loadScript(src){
@@ -1115,20 +1338,24 @@
         }
         x.textAlign = "left"; x.font = `500 ${z(26)}px ${FONT}`; x.fillStyle = "#8f8f8b"; x.direction = "ltr";
         x.fillText("#" + n, cx + pad, cy + z(58));
+        const wN = x.measureText("#" + n).width;
+        x.direction = "rtl"; x.font = `400 ${z(24)}px ${FONT}`; x.fillText(chainOf(v).name, cx + pad + wN + z(14), cy + z(58));
         // the code itself, drawn at whole-pixel bar widths and never stretched
         const top = cy + z(84), room = ch - z(84) - z(150);
-        const img = codeCanvas(v, fmt, cw - 2 * pad, room);
+        const img = codeCanvas(v, chainOf(v).barcode || fmt, cw - 2 * pad, room);
         let iw = img.width, ih = img.height;
         if(iw > cw - 2 * pad){ const f = (cw - 2 * pad) / iw; iw *= f; ih *= f; }
         x.imageSmoothingEnabled = false;
         x.drawImage(img, Math.round(cx + (cw - iw) / 2), Math.round(top + (room - ih) / 2), iw, ih);
         // number and date, for recognising the voucher
         x.direction = "ltr"; x.textAlign = "center"; x.fillStyle = "#141414"; x.font = `600 ${z(38)}px ${FONT}`;
-        x.fillText(group(v.code).join("  "), cx + cw / 2, cy + ch - z(100));
+        const numTxt = group(v.code).join("  ");
+        for(let fs = z(38); fs > 10 && x.measureText(numTxt).width > cw - 2 * pad; fs--) x.font = `600 ${fs}px ${FONT}`;   // long numbers shrink to fit
+        x.fillText(numTxt, cx + cw / 2, cy + ch - z(100));
         x.direction = "rtl"; x.font = `400 ${z(24)}px ${FONT}`; x.fillStyle = "#666663";
         const parts = [];
         if(v.loaded) parts.push("הוטען ב-" + isoToHe(v.loaded));
-        if(v.loaded) parts.push("בתוקף עד " + isoToHe(plusYears(v.loaded, 5)));
+        if(expiryOf(v)) parts.push("בתוקף עד " + isoToHe(expiryOf(v)));
         x.fillText(parts.join(", "), cx + cw / 2, cy + ch - z(62));
         // a box to tick by hand
         const bx = z(24);
@@ -1176,13 +1403,15 @@
   const FMT_KEY = "victory-barfmt";
   let barFmt = localStorage.getItem(FMT_KEY) || "CODE128";
   function fmtsFor(v){
+    if(chainOf(v).barcode) return [[chainOf(v).barcode, "Code 128"]];   // this chain's vouchers come with a barcode of a known type
     const f = [["CODE128", "Code 128"], ["CODE39", "Code 39"]];
     if(ean13ok(v.code)) f.push(["EAN13", "EAN-13"]);
     return f;
   }
   function drawCode(v){
     const bar = $("rBar"), list = fmtsFor(v);
-    let fmt = list.some(f => f[0] === barFmt) ? barFmt : "CODE128";
+    let fmt = list.some(f => f[0] === barFmt) ? barFmt : list[0][0];
+    $("barFmtBox").hidden = list.length < 2;
     let ok = false;
     try{
       if(window.JsBarcode){
@@ -1200,20 +1429,23 @@
       seg.append(b);
     });
   }
+  // at the till only one chain's vouchers are of use, so "next" stays within the chain
+  const sameChain = v => active().filter(x => chainKey(x) === chainKey(v));
   function openReader(id){
-    const act = active(); const v = act.find(x => x.id === id); if(!v){ closeReader(); return; }
+    const v = active().find(x => x.id === id); if(!v){ closeReader(); return; }
+    const act = sameChain(v);
     curId = id;
-    $("rPos").textContent = act.length > 1 ? `תו ${act.indexOf(v)+1} מתוך ${act.length}` : "";
+    $("rPos").textContent = chainOf(v).name + (act.length > 1 ? `, תו ${act.indexOf(v)+1} מתוך ${act.length}` : "");
     const rb = $("rBal"); rb.innerHTML = "";
     const bal = balOf(v);
     if(bal != null){
-      rb.append(el("div", "lbl", "יתרה"));
+      rb.append(el("div", "lbl", chainOf(v).family === "multipass" ? "יתרה" : "סכום"));
       const a = el("div", "amt"); a.append(moneyHtml(bal)); rb.append(a);
       if(v.loadAmount != null && v.loadAmount !== bal) rb.append(el("div", "of", "מתוך " + money(v.loadAmount)));
     }
     const g = $("rGroups"); g.innerHTML = "";
     group(v.code).forEach(s => g.append(el("span", null, s)));
-    g.setAttribute("aria-label", v.code);
+    g.setAttribute("aria-label", v.code); g.classList.toggle("long", v.code.length > 13);
     const exp = expiryOf(v), parts = [];
     if(v.loaded) parts.push("הוטען ב-" + isoToHe(v.loaded));
     if(exp && daysLeft(exp) <= 30) parts.push((daysLeft(exp) < 0 ? "פג תוקף ב-" : "בתוקף עד ") + isoToHe(exp));
@@ -1227,7 +1459,7 @@
     if(!wakeLock && navigator.wakeLock) navigator.wakeLock.request("screen").then(l => { wakeLock = l; }).catch(() => {});
   }
   function closeReader(){ $("reader").classList.remove("open"); curId = null; if(wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; } maybeDisarm(); }
-  function nextAfter(id){ const act = active(); const i = act.findIndex(x => x.id === id); return act.length ? act[(i+1) % act.length] : null; }
+  function nextAfter(id){ const cur = active().find(x => x.id === id); if(!cur) return null; const act = sameChain(cur); const i = act.indexOf(cur); return act.length ? act[(i+1) % act.length] : null; }
   $("rClose").onclick = closeReader;
   $("rNext").onclick = () => { const n = nextAfter(curId); if(n) openReader(n.id); };
   $("rPartBtn").onclick = () => { const v = items.find(x => x.id === curId); if(v) openPartial(v); };

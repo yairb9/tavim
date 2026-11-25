@@ -9,12 +9,12 @@
 <!-- Everything the app runs is served from this site. Nothing is loaded from, or sent to, any other server. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="no-referrer">
-<script src="theme.js"></script>
+<script src="theme.js" charset="utf-8"></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<script src="lib-jsbarcode.min.js" defer></script>
-<script src="lib-qrcode.js" defer></script>
-<script src="lib-tesseract.min.js" defer></script>
+<script src="lib-jsbarcode.min.js" charset="utf-8" defer></script>
+<script src="lib-qrcode.js" charset="utf-8" defer></script>
+<script src="lib-tesseract.min.js" charset="utf-8" defer></script>
 <style>
 @font-face{font-family:"IBM Plex Sans Hebrew";font-weight:400;font-display:swap;src:url("font-400.woff2") format("woff2")}
 @font-face{font-family:"IBM Plex Sans Hebrew";font-weight:500;font-display:swap;src:url("font-500.woff2") format("woff2")}
@@ -201,6 +201,26 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px;pointer-events
 .notice .acts{display:flex;gap:8px}
 .notice .btn{min-height:36px;font-size:14px;padding:0 14px}
 .kv{font-size:13px;color:var(--muted);margin:-4px 0 12px}
+.chain-pick{margin:10px 0 0;padding-inline-start:32px}
+.chain-pick .seg{display:inline-flex;max-width:100%}
+.chain-pick .seg button{padding:6px 14px;font-size:14px}
+.chain-pick .read-note{margin:6px 0 0;color:var(--text);font-weight:500}
+.form .chain-pick,#mChainBox .chain-pick,#eChainBox .chain-pick{margin:0;padding:0}
+.cand-extra label.wide{grid-column:1/-1}
+.cand .num.long{font-size:15px;letter-spacing:.01em;padding-inline:10px}
+.row-code.long{font-size:14px;letter-spacing:0}
+.row-code.long span + span{margin-inline-start:.3em}
+.vr-code.long{font-size:20px}
+.groups.long{font-size:clamp(30px,9vw,46px)}
+.chain-btn{all:unset;display:inline-flex;align-items:center;gap:4px;font-size:17px;font-weight:600;cursor:pointer;padding:8px 0;border-radius:8px}
+.chain-btn svg{width:18px;height:18px;color:var(--muted)}
+.chain-btn:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
+.chain-list button{justify-content:space-between}
+.chain-list .cl-left{display:flex;flex-direction:column}
+.chain-list .cl-sub{font-size:13px;color:var(--muted)}
+.chain-list .cl-amt{font-weight:600;font-variant-numeric:tabular-nums lining-nums}
+.chain-list button[aria-current="true"] .cl-name{font-weight:600}
+.chain-list button[aria-current="true"] .cl-name::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-inline-start:8px;vertical-align:middle}
 .rv-actions{display:flex;gap:4px}
 .rv-actions .btn{min-height:36px;padding:0 8px;background:transparent;border:0;color:var(--accent)}
 .rv-actions .btn.del{color:var(--danger)}
@@ -303,12 +323,14 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></g></symbol>
   <symbol id="i-tick" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
 <div class="wrap">
   <header class="appbar">
-    <h1>התווים שלי</h1>
+    <h1 id="appTitle">התווים שלי</h1>
+    <button class="chain-btn" id="chainBtn" type="button" aria-haspopup="dialog" aria-label="בחירת רשת" hidden><span id="chainBtnTxt"></span><svg aria-hidden="true"><use href="#i-down"/></svg></button>
     <span>
       <button class="icon-btn" id="pdfBtn" type="button" aria-label="ייצוא ל-PDF"><svg><use href="#i-doc"/></svg></button>
       <button class="icon-btn" id="setBtn" type="button" aria-label="הגדרות"><svg><use href="#i-gear"/></svg></button>
@@ -319,6 +341,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <p class="sum-label">יתרה זמינה</p>
     <p class="sum-amount" id="sumAmt"></p>
     <p class="sum-sub" id="sumSub"></p>
+    <p class="sum-sub" id="sumChains" hidden></p>
     <p class="sum-warn" id="sumWarn" hidden></p>
   </section>
 
@@ -386,8 +409,9 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     </div>
     <div id="addForm" hidden>
       <div class="form">
-        <label class="fld wide">מספר התו<input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="20" autocomplete="off"></label>
-        <label class="fld">יתרה (₪)<input id="mAmt" class="num" inputmode="decimal" placeholder="לא חובה"></label>
+        <div class="wide" id="mChainBox"></div>
+        <label class="fld wide">מספר התו<input id="mCode" class="num" inputmode="numeric" placeholder="13 ספרות" maxlength="26" autocomplete="off"></label>
+        <label class="fld"><span id="mAmtLbl">יתרה (₪)</span><input id="mAmt" class="num" inputmode="decimal" placeholder="לא חובה"></label>
         <label class="fld">תאריך הטענה<input id="mExp" class="num" type="date"></label>
       </div>
       <p class="status err" id="mErr"></p>
@@ -431,7 +455,8 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <h2 id="editTitle">עריכת פרטים</h2>
     <p class="sub" id="editSub" dir="ltr" style="text-align:right"></p>
     <div class="form">
-      <label class="fld">יתרה (₪)<input id="eBal" class="num" inputmode="decimal"></label>
+      <div class="wide" id="eChainBox"></div>
+      <label class="fld"><span id="eBalLbl">יתרה (₪)</span><input id="eBal" class="num" inputmode="decimal"></label>
       <label class="fld">הוטען (₪)<input id="eLoad" class="num" inputmode="decimal"></label>
       <label class="fld wide">תאריך הטענה<input id="eDate" class="num" type="date"><span class="hint" id="eUntil"></span></label>
     </div>
@@ -449,7 +474,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <h2 id="pdfTitle">ייצוא ל-PDF</h2>
     <p class="sub" id="pdfSub"></p>
     <div id="pdfOpts">
-      <p class="fld" style="margin:0 0 8px">סוג הקוד בקובץ</p>
+      <p class="fld" id="pdfFmtLbl" style="margin:0 0 8px">סוג הקוד בקובץ</p>
       <div class="pick" id="pdfFmt"></div>
       <p class="status" id="pdfHint" style="margin-top:10px"></p>
       <p class="fld" style="margin:16px 0 8px">כמה תווים בשורה</p>
@@ -479,6 +504,16 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <p class="sub">כל עותק הוא הרשימה כפי שהייתה לפני השינוי הראשון באותו יום.</p>
     <div class="menu" id="snapList"></div>
     <div class="sheet-actions"><button class="btn quiet" data-close type="button">סגירה</button></div>
+  </div>
+</dialog>
+
+<!-- choose a chain -->
+<dialog class="sheet" id="chainSheet" aria-labelledby="chainTitle">
+  <div class="sheet-body">
+    <div class="grab-zone" aria-hidden="true"><div class="grab"></div></div>
+    <h2 id="chainTitle">באיזו רשת?</h2>
+    <p class="sub">הרשימה והיתרה יציגו רק את התווים של הרשת שנבחרה.</p>
+    <div class="menu chain-list" id="chainList"></div>
   </div>
 </dialog>
 
@@ -557,7 +592,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
     <div class="rmeta" id="rMeta"></div>
     <div class="codeview">
       <div class="bc" id="rBarBox"><svg id="rBar" role="img" aria-label="ברקוד"></svg></div>
-      <div class="fmt">
+      <div class="fmt" id="barFmtBox">
         <span>אם הקופה לא קוראת, נסו סוג אחר:</span>
         <div class="seg" id="barFmt" role="group" aria-label="סוג ברקוד"></div>
       </div>
@@ -571,6 +606,6 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 </div>
 
 <div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="toastUndo" type="button">ביטול</button></div>
-<script src="app.js" defer></script>
+<script src="app.js" charset="utf-8" defer></script>
 </body>
 </html>
