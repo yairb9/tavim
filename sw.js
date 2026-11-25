@@ -1,6 +1,6 @@
 // Service worker: offline use, receiving shared screenshots, and nothing else.
 // Every request it serves is for a file of this site; it never talks to another server.
-const VERSION = "v7";
+const VERSION = "v8";
 const SHELL = "tavim-shell-" + VERSION;      // the app itself: always refreshed from the server when online
 const STATIC = "tavim-static-1";              // big libraries: renamed only when a library is replaced
 const INBOX = "share-inbox";

@@ -271,7 +271,7 @@
       if(colon) addAmt(colon[1], "colon");
       // the big balance on the card stands alone on its line, maybe with a stray letter or two for ₪
       const lone = amtLine.trim().match(/^(?:[A-Za-z]{1,2}\s?)?(\d{2,4}(?:[.,]\d{1,2})?)(?:\s?[A-Za-z]{1,2})?$/);
-      if(lone) addAmt(lone[1], "lone");
+      if(lone && !/^1+$/.test(lone[1])) addAmt(lone[1], "lone");   // "11", "111": barcode bars or the phone's "|||" button
     });
 
     const byCode = new Map();
@@ -288,12 +288,14 @@
     };
     const today = todayIso();
     const out = list.map(c => {
-      let balance = null, loadAmount = null, loaded = null;
+      let balance = null, loadAmount = null, loaded = null, weak = false;
       const sure = x => (x.kind === "real" || x.kind === "decimal" || x.kind === "letter") ? 0 : 1;
       if(c.code.length >= 17){
         // a voucher for one fixed sum (Shufersal): the clearest amount on the page; no load date
-        const a = amounts.slice().sort((x, y) => (sure(x) - sure(y)) || (Math.abs(x.li - c.li) - Math.abs(y.li - c.li)))[0];
+        const times = v => amounts.filter(x => x.val === v).length;
+        const a = amounts.slice().sort((x, y) => (sure(x) - sure(y)) || (times(y.val) - times(x.val)) || (Math.abs(x.li - c.li) - Math.abs(y.li - c.li)))[0];
         balance = loadAmount = a ? a.val : null;
+        weak = !a || (sure(a) === 1 && times(a.val) < 2);
       } else if(single){
         // one voucher: the clearest amount, and the load date, which is the earliest date (and not in the future)
         const all = dates.map(d => d.iso).sort();
@@ -315,7 +317,7 @@
         const a = nearest(amounts, c.li, x => x.kind === "real" || x.kind === "letter" ? 0 : 1); balance = loadAmount = a ? a.val : null;
         const d = nearest(dates, c.li, x => x.iso <= today ? 0 : 1); loaded = d ? d.iso : null;
       }
-      return { code: c.code, ok: c.ok, li: c.li, balance, loadAmount, loaded };
+      return { code: c.code, ok: c.ok, li: c.li, balance, loadAmount, loaded, amountWeak: weak };
     });
     const found = out.filter(c => c.ok);
     // near-misses are only worth showing when no proper number was found; otherwise they are stray digits from the text
@@ -351,7 +353,14 @@
     }catch(e){ return null; }
   }
   function analyse(data, canvas){
-    const lines = (data.lines || []).filter(l => l.text && l.text.trim());
+    const edge = canvas.height * 0.045;
+    const lines = (data.lines || []).filter(l => {
+      if(!l.text || !l.text.trim()) return false;
+      // The strips at the very top and bottom of a screenshot belong to the phone, not to the voucher: the clock,
+      // the battery, and the navigation buttons, whose "|||" is read as "111". Only a full voucher number is kept from there.
+      const inBar = l.bbox && (l.bbox.y1 < edge || l.bbox.y0 > canvas.height - edge);
+      return !(inBar && (l.text.match(/\d/g) || []).length < 10);
+    });
     const res = extract(lines.length ? lines.map(l => l.text.trim().replace(/\s*\n\s*/g, " ")).join("\n") : (data.text || ""));
     res.found.concat(res.near).forEach(c => {
       const L = lines[c.li]; if(!L) return;
@@ -531,6 +540,12 @@
         pick.refresh(); showUntil();
       }
       inp.oninput = upd; upd();
+      if(obj.code && (obj.amountWeak || obj.balance == null)){
+        const w = document.createElement("span"); w.className = "amt-warn";
+        w.textContent = obj.balance == null ? "לא מצאתי את הסכום בצילום. הקלידו אותו." : "לא הייתי בטוח בסכום. בדקו אותו מול הצילום.";
+        ex.prepend(w); amt.classList.add("check");
+        amt.addEventListener("input", () => { w.remove(); amt.classList.remove("check"); }, { once: true });
+      }
       ex.append(la, lb, ld, until);
       wrap.append(row, pick.el, ex); rows.appendChild(wrap);
       return inp;
